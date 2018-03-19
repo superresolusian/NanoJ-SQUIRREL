@@ -1,0 +1,3 @@
+_kernel myBasicCLProgram(
+    _
+)
