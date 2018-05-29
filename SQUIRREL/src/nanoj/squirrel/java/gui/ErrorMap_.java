@@ -11,7 +11,9 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import nanoj.kernels.Kernel_SquirrelSwarmOptimizer;
 import nanoj.squirrel.java._BaseSQUIRRELDialog_;
+import nanoj.squirrel.java.gui.tools.SetMaximumStackSize_;
 import nanoj.squirrel.java.minimizers.GaussianFitMinimizer;
+import org.w3c.dom.Window;
 
 import java.awt.*;
 import java.util.ArrayList;
@@ -41,8 +43,13 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
     protected ErrorMap_ExtraSettings_ errorMap_ExtraSettings = new ErrorMap_ExtraSettings_();
     protected ErrorMap_ExtraSettings_ _errorMap_ExtraSettings;
 
+    protected SetMaximumStackSize_ maximumStackSize = new SetMaximumStackSize_();
+    ArrayList<String> titles = new ArrayList<String>();
+    String[] imageTitles;
+
     boolean framePurge, borderControl;
     int maxExpectedMisalignment;
+    int maxSRStackSize;
     boolean showIntensityNormalised, showConvolved, showRSF, showPositiveNegative;
 
     double sigmaGuess, alphaGuess, betaGuess;
@@ -61,18 +68,32 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
     public boolean beforeSetupDialog(String arg) {
         autoOpenImp = false;
         useSettingsObserver = true;
+        maxSRStackSize = (int) maximumStackSize.getPrefs("maxSRImages",50);
         int nImages = WindowManager.getImageCount();
         if(nImages<2){
             log.error("At least 2 images are required to run this code!");
             return false;
         }
+
+        imageTitles = WindowManager.getImageTitles();
+        for(int n=0; n<nImages; n++){
+            ImagePlus thisImp = WindowManager.getImage(imageTitles[n]);
+            if(thisImp.getStackSize()<=maxSRStackSize){
+                titles.add(thisImp.getTitle());
+            }
+        }
+
+        imageTitles = new String[titles.size()];
+        for(int n=0; n<titles.size(); n++){
+            imageTitles[n] = titles.get(n);
+        }
+
         return true;
     }
 
     @Override
     public void setupDialog() {
 
-        String[] imageTitles = WindowManager.getImageTitles();
 
         // create string array with 'estimate RSF' as option
         String[] imageTitlesRSF = new String[imageTitles.length + 1];
