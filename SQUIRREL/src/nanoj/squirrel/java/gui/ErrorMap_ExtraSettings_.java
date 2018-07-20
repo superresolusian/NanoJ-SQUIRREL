@@ -30,6 +30,7 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
         gd.addCheckbox("Crop black borders from super-resolution image (default: active)", getPrefs("borderControl", true));
 
         gd.addMessage("-=-= Registration Options =-=-\n", headerFont);
+        gd.addCheckbox("Enable registration (default: active)", getPrefs("doRegistration", true));
         gd.addNumericField("Maximum expected misalignment (0-auto)", getPrefs("maxExpectedMisalignment", 0), 0);
 
         gd.addMessage("-=-= Output Image Options =-=-\n", headerFont);
@@ -48,6 +49,7 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
         boolean framePurge = gd.getNextBoolean();
         boolean borderControl = gd.getNextBoolean();
 
+        boolean doRegistration = gd.getNextBoolean();
         int maxExpectedMisalignment = (int) gd.getNextNumber();
 
         boolean showIntensityNormalised = gd.getNextBoolean();
@@ -58,6 +60,7 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
         setPrefs("framePurge", framePurge);
         setPrefs("borderControl", borderControl);
 
+        setPrefs("doRegistration", doRegistration);
         setPrefs("maxExpectedMisalignment", maxExpectedMisalignment);
 
         setPrefs("showIntensityNormalised", showIntensityNormalised);

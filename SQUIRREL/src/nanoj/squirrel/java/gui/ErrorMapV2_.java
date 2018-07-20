@@ -32,8 +32,9 @@ import static nanoj.squirrel.java.gui.ImagesHelper.magnify;
 /**
  * Created by sculley on 02/06/2017.
  */
-public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
+public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
+    private static final float ROOT2 = (float) Math.sqrt(2);
     private static Kernel_SquirrelSwarmOptimizer kPSOErrorMap = new Kernel_SquirrelSwarmOptimizer();
 
     String titleRefImage = "", titleRSFImage = "", titleSRImage = "", noRSFString = "-- RSF unknown, estimate via optimisation --";
@@ -47,6 +48,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
     String[] imageTitles;
 
     boolean framePurge, borderControl;
+    boolean doRegistration;
     int maxExpectedMisalignment;
     int maxSRStackSize;
     boolean showIntensityNormalised, showConvolved, showRSF, showPositiveNegative;
@@ -55,7 +57,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
     ImagePlus impRef, impSR, impRSF;
     ImageStack imsRef, imsSR, imsRSF;
     int nSlicesRef, nSlicesSR, nSlicesRSF;
-    int w_SR, h_SR;
+    int w_SR, h_SR, w_Ref, h_Ref;
     int magnification, magnification2;
     boolean noCrop = true;
     private boolean visualiseParameterEvolution = false;
@@ -204,6 +206,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
         framePurge = errorMap_ExtraSettings.getPrefs("framePurge", false);
         borderControl = errorMap_ExtraSettings.getPrefs("borderControl", true);
 
+        doRegistration = errorMap_ExtraSettings.getPrefs("doRegistration", true);
         maxExpectedMisalignment = errorMap_ExtraSettings.getPrefs("maxExpectedMisalignment", 0);
 
         showIntensityNormalised = errorMap_ExtraSettings.getPrefs("showIntensityNormalised", true);
@@ -221,9 +224,6 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
 
         long startTime = System.currentTimeMillis();
 
-        // Initialise sigma and run PSO optimizer on demagnified images to refine guess
-
-        log.status("Meta-optimising sigma...");
 
         // Check and purge homogeneous/empty slices
         if(framePurge) {
@@ -282,8 +282,10 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
         }
 
         // Run cross-correlation realignment and crop realignment borders
-        log.status("Registering and cropping images...");
-        realignImages();
+        if(doRegistration) {
+            log.status("Registering and cropping images...");
+            realignImages();
+        }
 
         // update width and height
         w_SR = imsSR.getWidth();
@@ -292,6 +294,9 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
         // Set up reference float processors
         FloatProcessor fpRef = imsRef.getProcessor(1).convertToFloatProcessor();
         fpRef.resetRoi();
+
+        w_Ref = fpRef.getWidth();
+        h_Ref = fpRef.getHeight();
 
         FloatProcessor fpRef_scaledToSR = (FloatProcessor) fpRef.duplicate();
         fpRef_scaledToSR.setInterpolationMethod(ImageProcessor.BICUBIC);
@@ -321,116 +326,91 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
             FloatProcessor fpSR = imsSR.getProcessor(n).convertToFloatProcessor();
             fpSR.resetRoi();
             FloatProcessor fpSR_scaledToRef = (FloatProcessor) fpSR.duplicate();
-            fpSR_scaledToRef = (FloatProcessor) fpSR_scaledToRef.resize(fpRef.getWidth(), fpRef.getHeight());
+            fpSR_scaledToRef = (FloatProcessor) fpSR_scaledToRef.resize(w_Ref, h_Ref);
+            float[] pixelsSR = (float[]) fpSR.duplicate().getPixels();
+            float[] pixelsRef = (float[]) fpRef.duplicate().getPixels();
 
-            log.msg("Meta-optimisation of alpha and beta:");
+            // get initial closed form guess for alpha and beta from non-convolved image
 
-            // Rough estimate of alpha and beta on reference image magnification
-            log.status("Meta-optimising alpha and beta...");
+            float[] onesA = new float[w_SR*h_SR];
+            for(int i=0; i<w_SR*h_SR; i++) onesA[i] = 1;
+            FloatProcessor fpOnesA = (FloatProcessor) new FloatProcessor(w_SR, h_SR, onesA).resize(w_Ref, h_Ref);
 
-            CurveFitter cf = new CurveFitter(floatArrayToDoubleArray(fpSR_scaledToRef.getPixels()), floatArrayToDoubleArray(fpRef.getPixels()));
-            cf.doFit(cf.STRAIGHT_LINE);
-            betaGuess = cf.getParams()[0];
-            alphaGuess = cf.getParams()[1];
-            log.msg("\t Initial alpha guess = "+alphaGuess+", initial beta guess = "+betaGuess);
+            float[] alphaBeta = calculateAlphaBeta((float[]) fpSR_scaledToRef.getPixels(), pixelsRef, (float[]) fpOnesA.getPixels());
 
-            if(impRSF!=null){
-                log.status("Extracting RSF features...");
-                FloatProcessor fpRSF = imsRSF.getProcessor(min(n, nSlicesRSF)).convertToFloatProcessor();
-                GaussianFitMinimizer gaussianFitMinimizer = new GaussianFitMinimizer(fpRSF, 1.75, fpRSF.getWidth() / 2, fpRSF.getHeight() / 2);
-                Double[] fitResults = gaussianFitMinimizer.calculate();
-                sigmaGuess = fitResults[2];
-                IJ.log("Extracted sigma from fit to RSF is: " + sigmaGuess);
-            }
-            else {
-                sigmaGuess = 0;
+            float alphaHat = alphaBeta[0];
+            float betaHat = alphaBeta[1];
+
+            log.msg("initial alpha guess = "+alphaHat+", initial beta guess = "+betaHat);
+
+            float[] intensityScaledSR = new float[w_SR*h_SR];
+            for(int i=0; i<w_SR*h_SR; i++){
+                intensityScaledSR[i] = pixelsSR[i] * alphaHat + betaHat;
             }
 
-            // Main optimizer - estimate alpha, beta and sigma
+            float error = getErrorVal(pixelsRef_scaledToSR, intensityScaledSR);
+            log.msg("error = "+error);
 
-            log.msg("Joint PSO Optimisation:");
-            log.status("Joint optimisation of alpha, beta and sigma...");
-            double[] results;
+            float thisSigma = 0;
+            float sigmaStep = 0.1f;
+            boolean improvement = true;
 
-            kPSOErrorMap.maxMagnification = maxMag;
+            float[] bestParameters = new float[]{alphaHat, betaHat, 0};
 
-            if (alphaGuess != 0 && betaGuess != 0) {
-                results = kPSOErrorMap.calculate(fpRef, fpSR, 10, 300,
-                        new double[]{0.001, betaGuess * 0.1, 0.5}, // low boundary
-                        new double[]{alphaGuess * 10, betaGuess * 10, 10}, // high boundary
-                        new double[]{alphaGuess, betaGuess, sigmaGuess==0?5:sigmaGuess}, // best guess
-                        new int[]{OBEY_LOW_BOUNDARY, DONT_OBEY_BOUNDARY, sigmaGuess==0?OBEY_BOUNDARY:CONSTANT}, // impose boundaries
-                        1e-7);
-            } else {
-                results = kPSOErrorMap.calculate(fpRef, fpSR, 10, 300,
-                        new double[]{0.001, -1000, 0.5}, // low boundary
-                        new double[]{100, 1000, 10}, // high boundary
-                        new double[]{10, 0, sigmaGuess==0?5:sigmaGuess}, // best guess
-                        new int[]{OBEY_LOW_BOUNDARY, DONT_OBEY_BOUNDARY, sigmaGuess==0?OBEY_BOUNDARY:CONSTANT}, // impose boundaries
-                        Double.NaN);
+            // increase sigma until minimum reached
+            while(improvement){
+                thisSigma += sigmaStep;
+
+                // make SR image
+                FloatProcessor fpTest = new FloatProcessor(w_SR, h_SR, pixelsSR);
+                // convolve with current sigma estimate
+                fpTest.blurGaussian(thisSigma*magnification);
+                // scale to reference image size
+                fpTest = (FloatProcessor) fpTest.resize(w_Ref, h_Ref);
+
+                // make image of ones
+                fpOnesA = new FloatProcessor(w_SR, h_SR, onesA);
+                // convolve with current sigma estimate
+                fpOnesA.blurGaussian(thisSigma*magnification);
+                // scale to reference image scale
+                fpOnesA = (FloatProcessor) fpOnesA.resize(w_Ref, h_Ref);
+
+                alphaBeta = calculateAlphaBeta((float[]) fpTest.getPixels(), pixelsRef, (float[]) fpOnesA.getPixels());
+                alphaHat = alphaBeta[0];
+                betaHat = alphaBeta[1];
+
+                for(int i=0; i<w_SR*h_SR; i++){
+                    intensityScaledSR[i] = pixelsSR[i]*alphaHat + betaHat;
+                }
+
+                float thisError = getErrorVal(pixelsRef_scaledToSR, intensityScaledSR);
+                float delta = abs(error - thisError);
+                log.msg("----------------------------------------");
+                log.msg("Error = "+thisError+" (delta = "+delta+")");
+                log.msg("----------------------------------------");
+
+                if(thisError<error){
+                    error = thisError;
+                    bestParameters[0] = alphaHat;
+                    bestParameters[1] = betaHat;
+                    bestParameters[2] = thisSigma;
+                    log.msg("Sigma = "+thisSigma+", AlphaHat = "+alphaHat+", BetaHat = "+betaHat);
+                }
+                else{
+                    improvement = false;
+                }
             }
-
-//            if (sigmaGuess == 0) {
-//                if (alphaGuess != 0 && betaGuess != 0) {
-//                    results = kPSOErrorMap.calculate(fpRef, fpSR, 10, 300,
-//                            new double[]{0.001, betaGuess * 0.1, 0.5}, // low boundary
-//                            new double[]{alphaGuess * 10, betaGuess * 10, 10}, // high boundary
-//                            new double[]{alphaGuess, betaGuess, 5}, // best guess
-//                            new int[]{OBEY_LOW_BOUNDARY, DONT_OBEY_BOUNDARY, OBEY_BOUNDARY}, // impose boundaries
-//                            1e-7);
-//                }
-//                else {
-//                    results = kPSOErrorMap.calculate(fpRef, fpSR, 10, 300,
-//                            new double[]{0.001, -1000, 0.5}, // low boundary
-//                            new double[]{100, 1000, 10}, // high boundary
-//                            new double[]{10, 0, 5}, // best guess
-//                            new int[]{OBEY_LOW_BOUNDARY, DONT_OBEY_BOUNDARY, OBEY_BOUNDARY}, // impose boundaries
-//                            Double.NaN);
-//                }
-//            }
-//            else {
-//                if (alphaGuess != 0 && betaGuess != 0) {
-//                    results = kPSOErrorMap.calculate(fpRef, fpSR, 10, 300,
-//                            new double[]{0.001, betaGuess * 0.1, sigmaGuess * 0.9}, // low boundary
-//                            new double[]{alphaGuess * 10, betaGuess * 10, sigmaGuess * 1.1}, // high boundary
-//                            new double[]{alphaGuess, betaGuess, sigmaGuess}, // best guess
-//                            new int[]{OBEY_LOW_BOUNDARY, DONT_OBEY_BOUNDARY, OBEY_BOUNDARY}, // impose boundaries
-//                            1e-7);
-//                } else {
-//                    results = kPSOErrorMap.calculate(fpRef, fpSR, 10, 300,
-//                            new double[]{0.001, -1000, sigmaGuess * 0.9}, // low boundary
-//                            new double[]{100, 1000, sigmaGuess * 1.1}, // high boundary
-//                            new double[]{10, 0, sigmaGuess}, // best guess
-//                            new int[]{OBEY_LOW_BOUNDARY, DONT_OBEY_BOUNDARY, OBEY_BOUNDARY}, // impose boundaries
-//                            Double.NaN);
-//                }
-//            }
-
-            double alpha = results[0];
-            double beta = results[1];
-            double sigma = results[2];
-
-            if(visualiseParameterEvolution) {
-                // Visualization of parameter evolution
-                kPSOErrorMap.plotOptimizationEvolution(new String[] {"Alpha", "Beta", "Sigma"});
-                kPSOErrorMap.plotOptimizationEvolution3D(512, 512, 0, 1, 2).show();
-                kPSOErrorMap.renderOptimizationEvolution2D(128, 128, 0, 1).show();
-                kPSOErrorMap.renderOptimizationEvolution2D(128, 128, 0, 2).show();
-            }
-
-            log.msg("Final parameters:");
-            log.msg("\t Alpha = " + alpha + ", Beta = " + beta + ", Sigma = " + sigma + " (in Ref pixels)");
 
             // Generate RSF for this image
             log.status("Generating RSF");
-            FloatProcessor fpRSF = kPSOErrorMap.getRSF();
+            FloatProcessor fpRSF = getRSF(bestParameters[2]);
             fpRSFArray[n-1] = fpRSF;
             maxRSFWidth = max(maxRSFWidth, fpRSF.getWidth());
 
             log.status("Intensity rescaling SR image");
             float[] pixelsSR_intensityMatched = (float[]) fpSR.getPixels();
             for (int p = 0; p < nPixelsSR; p++) {
-                pixelsSR_intensityMatched[p] = (float) (pixelsSR_intensityMatched[p] * alpha + beta);
+                pixelsSR_intensityMatched[p] = (float) (pixelsSR_intensityMatched[p] * bestParameters[0] + bestParameters[1]);
             }
 
             imsSRNormalised.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsSR_intensityMatched), n);
@@ -438,7 +418,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
             // Populate intensity rescaled and convolved SR image stack
             log.status("Convolving RSF with SR");
             FloatProcessor fpSRC = (FloatProcessor) fpSR.duplicate();
-            fpSRC.blurGaussian(sigma * magnification);
+            fpSRC.blurGaussian(bestParameters[2] * magnification);
 
             imsSRConvolved.setProcessor(fpSRC, n);
 
@@ -452,7 +432,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
             FloatProcessor fpSRC_scaledToRef = (FloatProcessor) fpSRC.duplicate();
             fpSRC_scaledToRef = (FloatProcessor) fpSRC_scaledToRef.resize(w_Ref, h_Ref);
             float[] pixelsSRC_scaledToRef = (float[]) fpSRC_scaledToRef.getPixels();
-            float[] pixelsRef = (float[]) fpRef.getPixels();
+            pixelsRef = (float[]) fpRef.getPixels();
 
             double globalRMSE = sqrt(calculateMSE(pixelsSRC_scaledToRef, pixelsRef));
             double globalPPMCC = calculatePPMCC(pixelsSRC_scaledToRef, pixelsRef, true);
@@ -709,5 +689,95 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
             if (s.equals(key)) return true;
         }
         return false;
+    }
+
+    private float[] calculateAlphaBeta(float[] xA, float[] y, float[] oneA){
+         /*
+            xA = scaled and translated super-resolution
+            oneA = scaled ones
+            y =  reference
+            */
+
+        float N = 0;
+        for(int i=0; i<oneA.length; i++){
+            N += oneA[i]*oneA[i];
+        }
+
+        float nPixels = xA.length;
+        assert(nPixels==y.length);
+        assert(nPixels==oneA.length);
+
+
+        float xATxA = 0, xAT1A = 0, yTxA = 0, yT1A = 0;
+
+        for(int i=0; i<nPixels; i++){
+            yTxA += y[i]*xA[i];
+            yT1A += y[i]*oneA[i];
+            xAT1A += xA[i]*oneA[i];
+            xATxA += xA[i]*xA[i];
+        }
+
+        float numerator = N*yTxA - yT1A*xAT1A;
+        float denominator = N*xATxA  - xAT1A*xAT1A;
+        float alphaHat = numerator/denominator;
+        float betaHat = yT1A/N - alphaHat*(xAT1A/N);
+
+        return new float[] {alphaHat, betaHat};
+    }
+
+    private float getErrorVal(float[] target, float[] test){
+        float error = 0;
+        float N = target.length;
+        assert(N==test.length);
+        for(int i=0; i<N; i++){
+            error += sqrt((target[i]-test[i])*(target[i]-test[i]))/N;
+        }
+        return error;
+    }
+
+    float getIntegratedGaussian(float dx, float dy, float sigma2) {
+        float Ex = 0.5f * (erf((dx + 0.5f) / sigma2) - erf((dx - 0.5f) / sigma2));
+        float Ey = 0.5f * (erf((dy + 0.5f) / sigma2) - erf((dy - 0.5f) / sigma2));
+        float vKernel = Ex * Ey;
+        return vKernel;
+    }
+
+    float erf(float g) {
+        float x = abs(g);
+        if (x >= 4.0f)
+            return (g > 0.0f) ? 1.0f : -1.0f;
+
+        // constants
+        float a1 =  0.254829592f;
+        float a2 = -0.284496736f;
+        float a3 =  1.421413741f;
+        float a4 = -1.453152027f;
+        float a5 =  1.061405429f;
+        float p  =  0.3275911f;
+
+        // A&S formula 7.1.26
+        float t = 1.0f / (1.0f + p*x);
+        float y = (float) (1.0f - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*exp(-x*x));
+
+        return (g > 0.0f) ? y : -y;
+    }
+
+    private FloatProcessor getRSF(float sigma) {
+        // calculate the final RSF
+        float sigma2 = (float) (ROOT2*abs(sigma));
+        int radius = max(((int) sigma) * 3, 1);
+        int size = radius * 2 + 1;
+        float vKernelSum = 0;
+
+        FloatProcessor fpRSF = new FloatProcessor(size, size);
+        for (int dy = -radius; dy <= radius; dy++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                float vKernel = getIntegratedGaussian(dx, dy, sigma2);
+                vKernelSum+= vKernel;
+                fpRSF.setf(dx+radius, dy+radius, vKernel);
+            }
+        }
+        fpRSF.multiply(1./vKernelSum);
+        return fpRSF;
     }
 }
