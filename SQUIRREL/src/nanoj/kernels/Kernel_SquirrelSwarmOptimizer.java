@@ -235,6 +235,10 @@ public class Kernel_SquirrelSwarmOptimizer extends Kernel_BasePSO {
         particlesErrorMap[p] = pow(v - pixelsRef[yRef* widthRef +xRef],2);
     }
 
+    public double getGlobalBestError(){
+        return globalBestError;
+    }
+
     public FloatProcessor getRSF() {
         // calculate the final RSF
         double sigma = globalBestPosition[2] * originalMagnification;

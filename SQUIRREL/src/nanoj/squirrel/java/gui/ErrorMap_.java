@@ -420,6 +420,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
 
             log.msg("Final parameters:");
             log.msg("\t Alpha = " + alpha + ", Beta = " + beta + ", Sigma = " + sigma + " (in Ref pixels)");
+            log.msg("\t Error = "+kPSOErrorMap.getGlobalBestError());
 
             // Generate RSF for this image
             log.status("Generating RSF");
