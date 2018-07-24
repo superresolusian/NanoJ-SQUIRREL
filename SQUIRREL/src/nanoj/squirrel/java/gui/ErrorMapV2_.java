@@ -325,6 +325,18 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         ImageStack imsSRNormalised = new ImageStack(w_SR, h_SR, nSlicesSR);
         ResultsTable rt = new ResultsTable();
 
+        /*
+        Nyquist calculations:
+        Resolution of microscope = FWHM of PSF
+        => If correctly sampled, resolution = 2 pixels. More likely to oversample than undersample so make generous
+        assumption that resolution = 4 pixels
+        => Sigma of Gaussian PSF would be 4/2.35482 pixels = 1.6986
+        => Calculating sigma on upsampled grid therefore multiply by magnification
+         */
+
+        //float nyquistFactor = (4/2.35482f)*magnification;
+        float nyquistFactor = 20;
+
         long loopStart = System.nanoTime();
 
         for(int n=1; n<=nSlicesSR; n++){
@@ -336,15 +348,17 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             // Get SR FloatProcessor
             FloatProcessor fpSR = imsSR.getProcessor(n).convertToFloatProcessor();
 
+
             // UNIVARIATE OPTIMIZER
             /// setup optimizer
             sigmaOptimiseFunction f =  new ErrorMapV2_.sigmaOptimiseFunction(fpSR, pixelsRef, ones);
             UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
             /// run optimizer
             UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
-                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0,magnification*2.5)); //NYQUIST ASSUMED
+                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0,nyquistFactor)); //NYQUIST ASSUMED
             float sigma = (float) result.getPoint();
             log.msg("Best sigma is: "+sigma);
+            log.msg("Best error is: "+result.getValue());
 
             float[] errorList = toArray(f.getErrorList(), 1.0f);
             float[] sigmaList = toArray(f.getSigmaList(), 1.0f);
