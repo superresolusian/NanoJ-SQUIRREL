@@ -334,8 +334,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         => Calculating sigma on upsampled grid therefore multiply by magnification
          */
 
-        //float nyquistFactor = (4/2.35482f)*magnification;
-        float nyquistFactor = 20;
+        float nyquistFactor = (4/2.35482f)*magnification;
 
         long loopStart = System.nanoTime();
 
