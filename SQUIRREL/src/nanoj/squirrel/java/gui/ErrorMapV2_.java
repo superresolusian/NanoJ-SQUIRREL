@@ -5,6 +5,7 @@ import ij.ImagePlus;
 import ij.ImageStack;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
+import ij.gui.Plot;
 import ij.measure.CurveFitter;
 import ij.measure.ResultsTable;
 import ij.process.FloatProcessor;
@@ -14,12 +15,16 @@ import nanoj.squirrel.java._BaseSQUIRRELDialog_;
 import nanoj.squirrel.java.gui.tools.SetMaximumStackSize_;
 import nanoj.squirrel.java.minimizers.GaussianFitMinimizer;
 import org.apache.commons.math3.analysis.UnivariateFunction;
+import org.apache.commons.math3.optim.MaxEval;
+import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
+import org.apache.commons.math3.optim.univariate.*;
 
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 
 import static java.lang.Math.*;
+import static nanoj.core.java.array.ArrayCasting.toArray;
 import static nanoj.core.java.array.ArrayMath.calculateMSE;
 import static nanoj.core.java.array.ArrayMath.calculatePPMCC;
 import static nanoj.core.java.image.drift.EstimateShiftAndTilt.MAX_FITTING;
@@ -291,6 +296,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         // update width and height
         w_SR = imsSR.getWidth();
         h_SR = imsSR.getHeight();
+        int nPixelsSR = w_SR*h_SR;
 
         // Set up reference float processors
         FloatProcessor fpRef = imsRef.getProcessor(1).convertToFloatProcessor();
@@ -299,18 +305,22 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         w_Ref = fpRef.getWidth();
         h_Ref = fpRef.getHeight();
 
-        FloatProcessor fpRef_scaledToSR = (FloatProcessor) fpRef.duplicate();
-        fpRef_scaledToSR.setInterpolationMethod(ImageProcessor.BICUBIC);
-        fpRef_scaledToSR = (FloatProcessor) fpRef_scaledToSR.resize(w_SR, h_SR);
-        float[] pixelsRef_scaledToSR = (float[]) fpRef_scaledToSR.getPixels();
+        // Set up pixel arrays for optimization
+        float[] pixelsRef = (float[]) fpRef.getPixels();
+        float[] ones = new float[nPixelsSR];
+        for(int i=0; i<nPixelsSR; i++){ones[i] = 1;}
+
+        // Set up pixel array for error map generation
+        FloatProcessor fpRefScaledToSR = (FloatProcessor) fpRef.duplicate();
+        fpRefScaledToSR.setInterpolationMethod(ImageProcessor.BICUBIC);
+        fpRefScaledToSR = (FloatProcessor) fpRefScaledToSR.resize(w_SR, h_SR);
+        float[] pixelsRefScaledToSR = (float[]) fpRefScaledToSR.getPixels();
 
         // Set up output
         int maxRSFWidth = 0;
         FloatProcessor[] fpRSFArray = new FloatProcessor[nSlicesSR];
 
         ImageStack imsSRConvolved = new ImageStack(w_SR, h_SR, nSlicesSR);
-
-        int nPixelsSR = w_SR*h_SR;
         ImageStack imsEMap = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsSRNormalised = new ImageStack(w_SR, h_SR, nSlicesSR);
         ResultsTable rt = new ResultsTable();
@@ -323,137 +333,85 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             log.msg("Processing super-resolution frame "+n);
             log.msg("-----------------------------------");
 
-            // Set up SR float processors
+            // Get SR FloatProcessor
             FloatProcessor fpSR = imsSR.getProcessor(n).convertToFloatProcessor();
-            fpSR.resetRoi();
-            FloatProcessor fpSR_scaledToRef = (FloatProcessor) fpSR.duplicate();
-            fpSR_scaledToRef = (FloatProcessor) fpSR_scaledToRef.resize(w_Ref, h_Ref);
-            float[] pixelsSR = (float[]) fpSR.duplicate().getPixels();
-            float[] pixelsRef = (float[]) fpRef.duplicate().getPixels();
 
-            // get initial closed form guess for alpha and beta from non-convolved image
+            // UNIVARIATE OPTIMIZER
+            /// setup optimizer
+            sigmaOptimiseFunction f =  new ErrorMapV2_.sigmaOptimiseFunction(fpSR, pixelsRef, ones);
+            UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
+            /// run optimizer
+            UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
+                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0,magnification*2.5)); //NYQUIST ASSUMED
+            float sigma = (float) result.getPoint();
+            log.msg("Best sigma is: "+sigma);
 
-            float[] onesA = new float[w_SR*h_SR];
-            for(int i=0; i<w_SR*h_SR; i++) onesA[i] = 1;
-            FloatProcessor fpOnesA = (FloatProcessor) new FloatProcessor(w_SR, h_SR, onesA).resize(w_Ref, h_Ref);
+            float[] errorList = toArray(f.getErrorList(), 1.0f);
+            float[] sigmaList = toArray(f.getSigmaList(), 1.0f);
 
-            float[] alphaBeta = calculateAlphaBeta((float[]) fpSR_scaledToRef.getPixels(), pixelsRef, (float[]) fpOnesA.getPixels());
+            Plot plot = new Plot("Brent optimiser - frame "+n+": Error vs Sigma", "Sigma", "Error");
+            plot.addPoints(sigmaList, errorList, Plot.CIRCLE);
+            plot.show();
 
-            float alphaHat = alphaBeta[0];
-            float betaHat = alphaBeta[1];
+            // GET ALPHA AND BETA
+            FloatProcessor blurredFp = (FloatProcessor) fpSR.duplicate();
+            FloatProcessor blurredOnes = new FloatProcessor(w_SR, h_SR, ones);
+            blurredFp.blurGaussian(sigma);
+            blurredOnes.blurGaussian(sigma);
 
-            log.msg("initial alpha guess = "+alphaHat+", initial beta guess = "+betaHat);
+            blurredFp = (FloatProcessor) blurredFp.resize(w_Ref, h_Ref);
+            blurredOnes = (FloatProcessor) blurredOnes.resize(w_Ref, h_Ref);
 
-            float[] intensityScaledSR = new float[w_SR*h_SR];
-            for(int i=0; i<w_SR*h_SR; i++){
-                intensityScaledSR[i] = pixelsSR[i] * alphaHat + betaHat;
-            }
+            float[] aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRef, (float[]) blurredOnes.getPixels());
+            float alpha = aB[0];
+            float beta = aB[1];
 
-            float error = getErrorVal(pixelsRef_scaledToSR, intensityScaledSR);
-            log.msg("error = "+error);
+            log.msg("Alpha is: "+alpha+", beta is: "+beta);
 
-            float thisSigma = 0;
-            float sigmaStep = 0.1f;
-            boolean improvement = true;
+            // POPULATE OUTPUT STACKS
 
-            float[] bestParameters = new float[]{alphaHat, betaHat, 0};
+            /// intensity-scaled stack
+            FloatProcessor fpSRIntensityScaled = (FloatProcessor) fpSR.duplicate();
+            fpSRIntensityScaled.multiply(alpha);
+            fpSRIntensityScaled.add(beta);
+            imsSRNormalised.setProcessor(fpSRIntensityScaled, n);
 
-            // increase sigma until minimum reached
-            while(improvement){
-                thisSigma += sigmaStep;
+            /// intensity-scaled and convolved stack
+            FloatProcessor fpSRIntensityScaledBlurred = (FloatProcessor) fpSRIntensityScaled.duplicate();
+            fpSRIntensityScaledBlurred.blurGaussian(sigma);
+            imsSRConvolved.setProcessor(fpSRIntensityScaledBlurred, n);
 
-                // make SR image
-                FloatProcessor fpTest = new FloatProcessor(w_SR, h_SR, pixelsSR);
-                // convolve with current sigma estimate
-                fpTest.blurGaussian(thisSigma*magnification);
-                // scale to reference image size
-                fpTest = (FloatProcessor) fpTest.resize(w_Ref, h_Ref);
-
-                // make image of ones
-                fpOnesA = new FloatProcessor(w_SR, h_SR, onesA);
-                // convolve with current sigma estimate
-                fpOnesA.blurGaussian(thisSigma*magnification);
-                // scale to reference image scale
-                fpOnesA = (FloatProcessor) fpOnesA.resize(w_Ref, h_Ref);
-
-                alphaBeta = calculateAlphaBeta((float[]) fpTest.getPixels(), pixelsRef, (float[]) fpOnesA.getPixels());
-                alphaHat = alphaBeta[0];
-                betaHat = alphaBeta[1];
-
-                for(int i=0; i<w_SR*h_SR; i++){
-                    intensityScaledSR[i] = pixelsSR[i]*alphaHat + betaHat;
-                }
-
-                float thisError = getErrorVal(pixelsRef_scaledToSR, intensityScaledSR);
-                float delta = abs(error - thisError);
-                log.msg("----------------------------------------");
-                log.msg("Error = "+thisError+" (delta = "+delta+")");
-                log.msg("----------------------------------------");
-
-                if(thisError<error){
-                    error = thisError;
-                    bestParameters[0] = alphaHat;
-                    bestParameters[1] = betaHat;
-                    bestParameters[2] = thisSigma;
-                    log.msg("Sigma = "+thisSigma+", AlphaHat = "+alphaHat+", BetaHat = "+betaHat);
-                }
-                else{
-                    improvement = false;
-                }
-            }
-
-            // Generate RSF for this image
+            /// Generate RSF for this image
             log.status("Generating RSF");
-            FloatProcessor fpRSF = getRSF(bestParameters[2]);
+            FloatProcessor fpRSF = getRSF(sigma/magnification);
             fpRSFArray[n-1] = fpRSF;
             maxRSFWidth = max(maxRSFWidth, fpRSF.getWidth());
 
-            log.status("Intensity rescaling SR image");
-            float[] pixelsSR_intensityMatched = (float[]) fpSR.getPixels();
-            for (int p = 0; p < nPixelsSR; p++) {
-                pixelsSR_intensityMatched[p] = (float) (pixelsSR_intensityMatched[p] * bestParameters[0] + bestParameters[1]);
-            }
-
-            imsSRNormalised.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsSR_intensityMatched), n);
-
-            // Populate intensity rescaled and convolved SR image stack
-            log.status("Convolving RSF with SR");
-            FloatProcessor fpSRC = (FloatProcessor) fpSR.duplicate();
-            fpSRC.blurGaussian(bestParameters[2] * magnification);
-
-            imsSRConvolved.setProcessor(fpSRC, n);
-
-            // Put into error map
-
+            // CALCULATE METRICS AND MAP
             log.status("Calculating similarity...");
 
-            int w_Ref = fpRef.getWidth();
-            int h_Ref = fpRef.getHeight();
+            /// metrics
+            FloatProcessor fpIntensityScaledBlurred_RefSize = (FloatProcessor) fpSRIntensityScaledBlurred.resize(w_Ref, h_Ref);
+            float[] pixelsIntensityScaledBlurred_RefSize = (float[]) fpIntensityScaledBlurred_RefSize.getPixels();
+            double globalRMSE = sqrt(calculateMSE(pixelsIntensityScaledBlurred_RefSize, pixelsRef));
+            double globalPPMCC = calculatePPMCC(pixelsIntensityScaledBlurred_RefSize, pixelsRef, true);
 
-            FloatProcessor fpSRC_scaledToRef = (FloatProcessor) fpSRC.duplicate();
-            fpSRC_scaledToRef = (FloatProcessor) fpSRC_scaledToRef.resize(w_Ref, h_Ref);
-            float[] pixelsSRC_scaledToRef = (float[]) fpSRC_scaledToRef.getPixels();
-            pixelsRef = (float[]) fpRef.getPixels();
-
-            double globalRMSE = sqrt(calculateMSE(pixelsSRC_scaledToRef, pixelsRef));
-            double globalPPMCC = calculatePPMCC(pixelsSRC_scaledToRef, pixelsRef, true);
-
+            /// error map
             float[] pixelsEMap = new float[nPixelsSR];
-            float[] pixelsSRC = (float[]) fpSRC.getPixels();
+            float[] pixelsSRC = (float[]) fpSRIntensityScaledBlurred.getPixels();
 
             float maxRef = -Float.MAX_VALUE;
-            for(int p=0; p<pixelsEMap.length; p++){
-                float vRef = pixelsRef_scaledToSR[p];
+            for(int p=0; p<nPixelsSR; p++){
+                float vRef = pixelsRefScaledToSR[p];
                 float vSRC = pixelsSRC[p];
 
-                maxRef = max(maxRef, vRef);
+                maxRef = max(maxRef, vRef); //why
                 if(showPositiveNegative) pixelsEMap[p] = (vRef - vSRC);
-                else pixelsEMap[p] = abs(vRef - vSRC);
+                else pixelsEMap[p] = abs(vRef-vSRC);
             }
-            // set Error Map into stack
             imsEMap.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsEMap), n);
 
-            // present error in table
+            /// put error values into table
             rt.incrementCounter();
             rt.addValue("Frame", n);
             rt.addValue("RSP (Resolution Scaled Pearson-Correlation)", globalPPMCC);
@@ -470,8 +428,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             }
         }
 
-        // Build RSF stack
-
+        /// BUILD RSF STACK
         ImageStack imsRSF_rescaled = new ImageStack(maxRSFWidth, maxRSFWidth, nSlicesSR);
         int centreLargest = maxRSFWidth/2;
 
@@ -507,6 +464,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         impEMap.show();
 
         log.msg("SQUIRREL analysis took "+(System.currentTimeMillis()-startTime)/1000+"s");
+
     }
 
     private void checkAndCropBorders() {
@@ -726,14 +684,62 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         return new float[] {alphaHat, betaHat};
     }
 
-    private float getErrorVal(float[] target, float[] test){
-        float error = 0;
-        float N = target.length;
-        assert(N==test.length);
+    private float calculateRMSE(float[] array1, float[] array2){
+
+        int N = array1.length;
+        double MSE = 0;
+
         for(int i=0; i<N; i++){
-            error += sqrt((target[i]-test[i])*(target[i]-test[i]))/N;
+            MSE += (array1[i]-array2[i])*(array1[i]-array2[i]);
         }
-        return error;
+        MSE /= N;
+
+        return (float) Math.sqrt(MSE);
+    }
+
+    private class sigmaOptimiseFunction implements UnivariateFunction{
+
+        FloatProcessor fpSR;
+        float[] pixelsRef, ones;
+        ArrayList<Float> sigmaList = new ArrayList<Float>();
+        ArrayList<Float> errorList = new ArrayList<Float>();
+
+        public sigmaOptimiseFunction(FloatProcessor fpSR, float[] pixelsRef, float[] ones){
+            this.fpSR = fpSR;
+            this.pixelsRef = pixelsRef;
+            this.ones = ones;
+        }
+
+        public double value(double sigma) {
+            FloatProcessor blurredFp = (FloatProcessor) fpSR.duplicate();
+            FloatProcessor blurredOnes = new FloatProcessor(w_SR, h_SR, ones);
+            blurredFp.blurGaussian(sigma);
+            blurredOnes.blurGaussian(sigma);
+
+            blurredFp = (FloatProcessor) blurredFp.resize(w_Ref, h_Ref);
+            blurredOnes = (FloatProcessor) blurredOnes.resize(w_Ref, h_Ref);
+
+            float[] aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRef, (float[]) blurredOnes.getPixels());
+
+            FloatProcessor finalFpSR = (FloatProcessor) fpSR.duplicate();
+            finalFpSR.multiply(aB[0]);
+            finalFpSR.add(aB[1]);
+            finalFpSR.blurGaussian(sigma);
+            FloatProcessor finalFpSRResized = (FloatProcessor) finalFpSR.resize(w_Ref, h_Ref);
+
+            double error = calculateRMSE(pixelsRef, (float[]) finalFpSRResized.getPixels());
+            sigmaList.add((float) sigma);
+            errorList.add((float) error);
+            return error;
+        }
+
+        public ArrayList<Float> getSigmaList() {
+            return sigmaList;
+        }
+
+        public ArrayList<Float> getErrorList() {
+            return errorList;
+        }
     }
 
     float getIntegratedGaussian(float dx, float dy, float sigma2) {
