@@ -38,7 +38,8 @@ public class Kernel_SquirrelSwarmOptimizer extends Kernel_BasePSO {
         else
             this.magnification = this.originalMagnification;
 
-        this.generator = new Random(327636000); // always use same seed for repeatability;
+        //this.generator = new Random(327636000); // always use same seed for repeatability;
+        this.generator = new Random(31415926);
         this.widthRef = fpRef.getWidth();
         this.heightRef = fpRef.getHeight();
         this.widthHeightRef = widthRef * heightRef;
@@ -121,7 +122,7 @@ public class Kernel_SquirrelSwarmOptimizer extends Kernel_BasePSO {
                     error += (vError-error) / counter;
                     counter++;
                 }
-                error = sqrt(error);
+                //error = sqrt(error);
 
                 // Update Global and Local Error Values
                 if (!Double.isNaN(error)) { // make sure error is not funky
@@ -232,7 +233,8 @@ public class Kernel_SquirrelSwarmOptimizer extends Kernel_BasePSO {
             }
         }
         v /=  magnification2;
-        particlesErrorMap[p] = pow(v - pixelsRef[yRef* widthRef +xRef],2);
+        //particlesErrorMap[p] = pow(v - pixelsRef[yRef* widthRef +xRef],2);
+        particlesErrorMap[p] = abs(v-pixelsRef[yRef*widthRef + xRef]);
     }
 
     public double getGlobalBestError(){
