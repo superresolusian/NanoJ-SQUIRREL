@@ -1,6 +1,5 @@
 package nanoj.squirrel.java.gui;
 
-import histogram2.HistogramMatcher;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
@@ -10,7 +9,6 @@ import ij.gui.Plot;
 import ij.measure.ResultsTable;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
-import nanoj.kernels.Kernel_SquirrelSwarmOptimizer;
 import nanoj.squirrel.java._BaseSQUIRRELDialog_;
 import nanoj.squirrel.java.gui.tools.SetMaximumStackSize_;
 import nanoj.squirrel.java.minimizers.GaussianFitMinimizer;
@@ -40,7 +38,6 @@ import static nanoj.squirrel.java.gui.ImagesHelper.magnify;
 public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
     private static final float ROOT2 = (float) Math.sqrt(2);
-    private static Kernel_SquirrelSwarmOptimizer kPSOErrorMap = new Kernel_SquirrelSwarmOptimizer();
 
     String titleRefImage = "", titleRSFImage = "", titleSRImage = "", noRSFString = "-- RSF unknown, estimate via optimisation --";
     boolean showAdvancedSettings, _showAdvancedSettings = false;
@@ -58,7 +55,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
     int maxSRStackSize;
     boolean showIntensityNormalised, showConvolved, showRSF, showPositiveNegative;
 
-    HistogramMatcher histogramMatcher = new HistogramMatcher();
+    //Convolve convolve = new Convolve();
 
     double sigmaGuess;
     ImagePlus impRef, impSR, impRSF;
@@ -323,11 +320,8 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         FloatProcessor[] fpRSFArray = new FloatProcessor[nSlicesSR];
 
         ImageStack imsSRConvolved = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsSRConvolved_histMatched = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsEMap = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsEMap_histMatched = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsSRNormalised = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsSRNormalised_histMatched = new ImageStack(w_SR, h_SR, nSlicesSR);
         ResultsTable rt = new ResultsTable();
 
         /*
@@ -342,6 +336,8 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         //float nyquistFactor = (4/2.35482f)*magnification;
         float nyquistFactor = 20;
 
+        //TODO: integrate in knowledge of PSF - warning flag?
+
         long loopStart = System.nanoTime();
 
         for(int n=1; n<=nSlicesSR; n++){
@@ -352,9 +348,6 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
             // Get SR FloatProcessor
             FloatProcessor fpSR = imsSR.getProcessor(n).convertToFloatProcessor();
-            ImageProcessor ipSR = imsSR.getProcessor(n);
-
-            log.msg("*****LINEAR RESCALING*****");
 
             // UNIVARIATE OPTIMIZER - LINEAR MATCHING
             /// setup optimizer
@@ -389,42 +382,6 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
             log.msg("Alpha is: "+alpha+", beta is: "+beta);
 
-            log.msg("*****HISTOGRAM MATCHING*****");
-            /////////////////////
-            //Histogram Matching
-            /// setup optimizer
-            sigmaOptimiseMatchHistogram f_mh =  new ErrorMapV2_.sigmaOptimiseMatchHistogram(fpSR, pixelsRef, histRef);
-            UnivariateOptimizer optimizer_mh = new BrentOptimizer(1e-10, 1e-14);
-            /// run optimizer
-            UnivariatePointValuePair result_mh = optimizer.optimize(new MaxEval(1000),
-                    new UnivariateObjectiveFunction(f_mh), GoalType.MINIMIZE, new SearchInterval(0,nyquistFactor)); //NYQUIST ASSUMED
-            float sigma_matched = (float) result_mh.getPoint();
-            log.msg("Best sigma is: "+sigma_matched);
-            log.msg("Best error is: "+result_mh.getValue());
-
-            float[] errorList_mh = toArray(f_mh.getErrorList(), 1.0f);
-            float[] sigmaList_mh = toArray(f_mh.getSigmaList(), 1.0f);
-
-            Plot plot_mh = new Plot("Brent optimiser - histogram matching - frame "+n+": Error vs Sigma", "Sigma", "Error");
-            plot_mh.addPoints(sigmaList_mh, errorList_mh, Plot.CIRCLE);
-            plot_mh.show();
-
-            // GET ALPHA AND BETA
-            FloatProcessor blurredFp_mh = (FloatProcessor) fpSR.duplicate();
-            FloatProcessor blurredOnes_mh = new FloatProcessor(w_SR, h_SR, ones);
-            blurredFp_mh.blurGaussian(sigma_matched);
-            blurredOnes_mh.blurGaussian(sigma_matched);
-
-            blurredFp_mh = (FloatProcessor) blurredFp_mh.resize(w_Ref, h_Ref);
-            blurredOnes_mh = (FloatProcessor) blurredOnes_mh.resize(w_Ref, h_Ref);
-
-            float[] aB_mh = calculateAlphaBeta((float[]) blurredFp_mh.getPixels(), pixelsRef, (float[]) blurredOnes_mh.getPixels());
-            float alpha_mh = aB_mh[0];
-            float beta_mh = aB_mh[1];
-
-            log.msg("Alpha is: "+alpha_mh+", beta is: "+beta_mh);
-
-
             // POPULATE OUTPUT STACKS
 
             /// intensity-scaled stack
@@ -433,19 +390,10 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             fpSRIntensityScaled.add(beta);
             imsSRNormalised.setProcessor(fpSRIntensityScaled, n);
 
-            FloatProcessor fpSRIntensityScaled_mh = (FloatProcessor) fpSR.duplicate();
-            fpSRIntensityScaled_mh.multiply(alpha);
-            fpSRIntensityScaled_mh.add(beta);
-            imsSRNormalised_histMatched.setProcessor(fpSRIntensityScaled_mh, n);
-
             /// intensity-scaled and convolved stack
             FloatProcessor fpSRIntensityScaledBlurred = (FloatProcessor) fpSRIntensityScaled.duplicate();
             fpSRIntensityScaledBlurred.blurGaussian(sigma_linear);
             imsSRConvolved.setProcessor(fpSRIntensityScaledBlurred, n);
-
-            FloatProcessor fpSRIntensityScaledBlurred_mh = (FloatProcessor) fpSRIntensityScaled_mh.duplicate();
-            fpSRIntensityScaledBlurred_mh.blurGaussian(sigma_matched);
-            imsSRConvolved_histMatched.setProcessor(fpSRIntensityScaledBlurred_mh, n);
 
             /// Generate RSF for this image
             log.status("Generating RSF");
@@ -520,13 +468,10 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         if(!noCrop) new ImagePlus(titleRefImage+" - " +borderString+" " +registrationString, imsRef).show();
         if(showIntensityNormalised || !noCrop){
             new ImagePlus(titleSRImage +" - " +borderString +registrationString+" - intensity-normalised", imsSRNormalised).show();
-            new ImagePlus(titleSRImage +" - " +borderString +registrationString+" - histomatch - intensity-normalised", imsSRNormalised_histMatched).show();
         }
 
         if(showConvolved){
             new ImagePlus(titleSRImage+" - Convolved with RSF", imsSRConvolved).show();
-            new ImagePlus(titleSRImage+" - histomatch - Convolved with RSF", imsSRConvolved_histMatched).show();
-
         }
         if(showRSF) new ImagePlus("Optimised RSF stack", imsRSF_rescaled).show();
 
@@ -626,15 +571,6 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         imsRef = imsRef.duplicate().crop(roundedLeft, roundedTop, 0, newWidth, newHeight, nSlicesRef);
         imsSR = imsSR.crop(roundedLeft*magnification, roundedTop*magnification, 0, newWidth*magnification, newHeight*magnification, nSlicesSR);
 
-    }
-
-    private double[] floatArrayToDoubleArray(Object pixels) {
-        float[] floatArray = (float[]) pixels;
-        double[] doubleArray = new double[floatArray.length];
-        for(int i=0; i<floatArray.length; i++){
-            doubleArray[i] = (double) floatArray[i];
-        }
-        return doubleArray;
     }
 
     private void realignImages(){
@@ -814,46 +750,6 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             return errorList;
         }
     }
-
-    private class sigmaOptimiseMatchHistogram implements UnivariateFunction{
-
-        ImageProcessor ipSR;
-        float[] pixelsRef;
-        int[] histRef;
-
-        ArrayList<Float> sigmaList = new ArrayList<Float>();
-        ArrayList<Float> errorList = new ArrayList<Float>();
-
-        public sigmaOptimiseMatchHistogram(ImageProcessor ipSR, float[] pixelsRef, int[] histRef){
-            this.ipSR = ipSR;
-            this.pixelsRef = pixelsRef;
-            this.histRef = histRef;
-        }
-
-        public double value(double sigma) {
-            FloatProcessor blurredFp = (FloatProcessor) ipSR.duplicate();
-            blurredFp.blurGaussian(sigma);
-            blurredFp = (FloatProcessor) blurredFp.resize(w_Ref, h_Ref);
-            int[] blurredSRHist = blurredFp.getHistogram();
-
-            int[] matchedHistograms = histogramMatcher.matchHistograms(blurredSRHist, histRef);
-            blurredFp.applyTable(matchedHistograms);
-
-            double error = calculateRMSE(pixelsRef, (float[]) blurredFp.getPixels());
-            sigmaList.add((float) sigma);
-            errorList.add((float) error);
-            return error;
-        }
-
-        public ArrayList<Float> getSigmaList() {
-            return sigmaList;
-        }
-
-        public ArrayList<Float> getErrorList() {
-            return errorList;
-        }
-    }
-
 
     float getIntegratedGaussian(float dx, float dy, float sigma2) {
         float Ex = 0.5f * (erf((dx + 0.5f) / sigma2) - erf((dx - 0.5f) / sigma2));
