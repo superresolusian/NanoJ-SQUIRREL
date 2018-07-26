@@ -58,8 +58,8 @@ public class BasicTesting_ extends _BaseDialog_ {
 
         trueAlpha = random.nextDouble()*(maxAlpha-minAlpha) + minAlpha;
         trueBeta = random.nextDouble()*(maxBeta-minBeta) + minBeta;
-        //trueSigma = random.nextDouble()*(maxSigma-minSigma) + minSigma;
-        trueSigma = 5;
+        trueSigma = random.nextDouble()*(maxSigma-minSigma) + minSigma;
+        //trueSigma = 5;
 
         log.msg("-----Simulated GT parameters-----");
         log.msg("a = "+trueAlpha+", B = "+trueBeta+", sig ="+trueSigma);
