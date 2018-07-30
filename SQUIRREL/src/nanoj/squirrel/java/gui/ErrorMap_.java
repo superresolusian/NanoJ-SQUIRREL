@@ -46,7 +46,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
     ArrayList<String> titles = new ArrayList<String>();
     String[] imageTitles;
 
-    boolean framePurge, borderControl;
+    boolean framePurge, borderControl, doRegistration;
     int maxExpectedMisalignment;
     int maxSRStackSize;
     boolean showIntensityNormalised, showConvolved, showRSF, showPositiveNegative;
@@ -204,6 +204,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
         framePurge = errorMap_ExtraSettings.getPrefs("framePurge", false);
         borderControl = errorMap_ExtraSettings.getPrefs("borderControl", true);
 
+        doRegistration = errorMap_ExtraSettings.getPrefs("doRegistration", true);
         maxExpectedMisalignment = errorMap_ExtraSettings.getPrefs("maxExpectedMisalignment", 0);
 
         showIntensityNormalised = errorMap_ExtraSettings.getPrefs("showIntensityNormalised", true);
@@ -282,8 +283,10 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
         }
 
         // Run cross-correlation realignment and crop realignment borders
-        log.status("Registering and cropping images...");
-        realignImages();
+        if(doRegistration) {
+            log.status("Registering and cropping images...");
+            realignImages();
+        }
 
         // update width and height
         w_SR = imsSR.getWidth();
