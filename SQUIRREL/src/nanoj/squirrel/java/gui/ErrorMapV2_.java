@@ -11,7 +11,6 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import nanoj.squirrel.java._BaseSQUIRRELDialog_;
 import nanoj.squirrel.java.gui.tools.SetMaximumStackSize_;
-import nanoj.squirrel.java.minimizers.GaussianFitMinimizer;
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
@@ -333,8 +332,8 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         => Calculating sigma on upsampled grid therefore multiply by magnification
          */
 
-        //float nyquistFactor = (4/2.35482f)*magnification;
-        float nyquistFactor = 20;
+        float nyquistFactor = (4/2.35482f)*magnification;
+        //float nyquistFactor = 20;
 
         //TODO: integrate in knowledge of PSF - warning flag?
 
