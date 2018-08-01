@@ -17,6 +17,7 @@ import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
 import org.apache.commons.math3.optim.univariate.*;
 
 import java.awt.*;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -37,6 +38,7 @@ import static nanoj.squirrel.java.gui.ImagesHelper.magnify;
 public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
     private static final float ROOT2 = (float) Math.sqrt(2);
+    private static final String OVERBLUR_MESSAGE = "RSF constrained as no good minimum found";
 
     String titleRefImage = "", titleRSFImage = "", titleSRImage = "", noRSFString = "-- RSF unknown, estimate via optimisation --";
     boolean showAdvancedSettings, _showAdvancedSettings = false;
@@ -66,6 +68,8 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
     private boolean borderCrop = false;
     private boolean registrationCrop = false;
     private int maxMag;
+
+    DecimalFormat df = new DecimalFormat("00.00");
 
     @Override
     public boolean beforeSetupDialog(String arg) {
@@ -324,7 +328,9 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         ResultsTable rt = new ResultsTable();
 
         /*
-        Nyquist calculations:
+        For 700nm FWHM of PSF is 305nm. Give leeway and say that maximum expected PSF FWHM is 400nm.
+        Therefore sigma of Gaussian PSF is 400/2.35482 nm = (400/2.35482)/pixelSize pixels
+        Nyquist calculations if data not calibrated:
         Resolution of microscope = FWHM of PSF
         => If correctly sampled, resolution = 2 pixels. More likely to oversample than undersample so make generous
         assumption that resolution = 4 pixels
@@ -332,10 +338,25 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         => Calculating sigma on upsampled grid therefore multiply by magnification
          */
 
-        float nyquistFactor = (4/2.35482f)*magnification;
-        //float nyquistFactor = 20;
+        float maxSigmaBoundary = (4/2.35482f)*magnification;
 
-        //TODO: integrate in knowledge of PSF - warning flag?
+        // Adjust maxSigmaBoundary if there is calibration data
+        String pixelUnitRef = impRef.getCalibration().getUnit();
+        log.msg("units: "+pixelUnitRef);
+        double pixelSizeNm;
+        if(pixelUnitRef=="nm"){
+            pixelSizeNm = impRef.getCalibration().pixelWidth;
+            maxSigmaBoundary = (float) ((400/2.35482)/pixelSizeNm);
+            log.msg("Setting maximum sigma to "+(400/2.35482)+"nm to avoid overblurring");
+        }
+        else if(pixelUnitRef=="micron" || pixelUnitRef=="microns" || pixelUnitRef=="µm"){
+            pixelSizeNm = impRef.getCalibration().pixelWidth * 1000;
+            maxSigmaBoundary = (float) ((400/2.35482)/pixelSizeNm);
+            log.msg("Setting maximum sigma to "+(400/2.35482)+"nm to avoid overblurring");
+        }
+        else{
+            log.msg("Setting maximum sigma to "+maxSigmaBoundary+" pixels to avoid overblurring");
+        }
 
         long loopStart = System.nanoTime();
 
@@ -344,6 +365,8 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             log.msg("-----------------------------------");
             log.msg("Processing super-resolution frame "+n);
             log.msg("-----------------------------------");
+
+            boolean overblurFlag = false;
 
             // Get SR FloatProcessor
             FloatProcessor fpSR = imsSR.getProcessor(n).convertToFloatProcessor();
@@ -354,7 +377,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
             /// run optimizer
             UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
-                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0,nyquistFactor)); //NYQUIST ASSUMED
+                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, maxSigmaBoundary)); //NYQUIST ASSUMED
             float sigma_linear = (float) result.getPoint();
             log.msg("Best sigma is: "+sigma_linear);
             log.msg("Best error is: "+result.getValue());
@@ -365,6 +388,11 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             Plot plot = new Plot("Brent optimiser - frame "+n+": Error vs Sigma", "Sigma", "Error");
             plot.addPoints(sigmaList, errorList, Plot.CIRCLE);
             plot.show();
+
+            if(abs(sigma_linear-maxSigmaBoundary)<0.0001f){
+                overblurFlag = true;
+                log.msg(OVERBLUR_MESSAGE);
+            }
 
             // GET ALPHA AND BETA
             FloatProcessor blurredFp = (FloatProcessor) fpSR.duplicate();
@@ -429,6 +457,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             rt.addValue("Frame", n);
             rt.addValue("RSP (Resolution Scaled Pearson-Correlation)", globalPPMCC);
             rt.addValue("RSE (Resolution Scaled Error)", globalRMSE);
+            rt.addValue("Overblur warning", String.valueOf(overblurFlag));
 
             if(nSlicesSR>1) {
                 double frameTime = ((System.nanoTime() - loopStart) / n) / 1e9;
@@ -736,6 +765,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             FloatProcessor finalFpSRResized = (FloatProcessor) finalFpSR.resize(w_Ref, h_Ref);
 
             double error = calculateRMSE(pixelsRef, (float[]) finalFpSRResized.getPixels());
+            log.status("Optimising... sigma="+df.format(sigma)+", alpha="+df.format(aB[0])+", beta="+df.format(aB[1])+". Error="+df.format(error));
             sigmaList.add((float) sigma);
             errorList.add((float) error);
             return error;
