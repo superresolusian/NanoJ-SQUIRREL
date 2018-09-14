@@ -1,10 +1,9 @@
-package nanoj.squirrel.java.gui;
+package nanoj.squirrel.java.gui.testing;
 
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.gui.Plot;
 import ij.process.FloatProcessor;
-import ij.process.ImageProcessor;
 import nanoj.core.java.gui._BaseDialog_;
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.optim.MaxEval;
@@ -15,7 +14,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Random;
 
-import static java.lang.Math.abs;
 import static nanoj.core.java.array.ArrayCasting.toArray;
 
 public class BasicTesting_ extends _BaseDialog_ {
