@@ -342,17 +342,16 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
         // Adjust maxSigmaBoundary if there is calibration data
         String pixelUnitRef = impRef.getCalibration().getUnit();
-        log.msg("units: "+pixelUnitRef);
         double pixelSizeNm;
-        if(pixelUnitRef=="nm"){
+        if(pixelUnitRef.equals("nm")){
             pixelSizeNm = impRef.getCalibration().pixelWidth;
-            maxSigmaBoundary = (float) ((400/2.35482)/pixelSizeNm);
-            log.msg("Setting maximum sigma to "+(400/2.35482)+"nm to avoid overblurring");
+            maxSigmaBoundary = (float) ((400/2.35482)/pixelSizeNm)*magnification;
+            log.msg("Setting maximum sigma to "+df.format(400/2.35482)+" nm to avoid overblurring");
         }
-        else if(pixelUnitRef=="micron" || pixelUnitRef=="microns" || pixelUnitRef=="µm"){
+        else if(pixelUnitRef.equals("micron")|| pixelUnitRef.equals("microns") || pixelUnitRef.equals("µm")){
             pixelSizeNm = impRef.getCalibration().pixelWidth * 1000;
-            maxSigmaBoundary = (float) ((400/2.35482)/pixelSizeNm);
-            log.msg("Setting maximum sigma to "+(400/2.35482)+"nm to avoid overblurring");
+            maxSigmaBoundary = (float) ((400/2.35482)/pixelSizeNm)*magnification;
+            log.msg("Setting maximum sigma to "+df.format(400/2.35482)+" nm to avoid overblurring");
         }
         else{
             log.msg("Setting maximum sigma to "+maxSigmaBoundary+" pixels to avoid overblurring");
