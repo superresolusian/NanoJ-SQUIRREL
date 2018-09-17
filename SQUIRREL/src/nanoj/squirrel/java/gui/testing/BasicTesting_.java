@@ -1,8 +1,9 @@
 package nanoj.squirrel.java.gui.testing;
 
 import ij.ImagePlus;
-import ij.ImageStack;
+import ij.gui.NonBlockingGenericDialog;
 import ij.gui.Plot;
+import ij.measure.ResultsTable;
 import ij.process.FloatProcessor;
 import nanoj.core.java.gui._BaseDialog_;
 import org.apache.commons.math3.analysis.UnivariateFunction;
@@ -14,16 +15,15 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Random;
 
-import static nanoj.core.java.array.ArrayCasting.toArray;
-
 public class BasicTesting_ extends _BaseDialog_ {
 
     ImagePlus impRef, impSR;
-    int w_SR, h_SR, w_Ref, h_Ref, nPixelsRef, nPixelsSR, nSlicesSR, magnification;
+    int w_SR, h_SR, w_Ref, h_Ref, nPixelsSR;
 
     double trueAlpha, trueBeta, trueSigma;
-    double maxAlpha=10000, maxBeta=5000, maxSigma=15;
-    double minAlpha=100, minBeta =50, minSigma=1;
+    double maxAlpha, maxBeta, maxSigma;
+    double minAlpha, minBeta, minSigma;
+    int magnification, nRepeats;
 
     Random random = new Random();
 
@@ -36,10 +36,45 @@ public class BasicTesting_ extends _BaseDialog_ {
     }
 
     @Override
-    public void setupDialog() { }
+    public void setupDialog() {
+        gd = new NonBlockingGenericDialog("Test accuracy of α, β and σ");
+
+        gd.addNumericField("Minimum α", getPrefs("minAlpha", 100), 0);
+        gd.addNumericField("Maximum α", getPrefs("maxAlpha", 10000), 0);
+
+        gd.addNumericField("Minimum β", getPrefs("minBeta", 50), 0);
+        gd.addNumericField("Maximum β", getPrefs("maxBeta", 5000), 0);
+
+        gd.addNumericField("Minimum σ", getPrefs("minSigma", 1), 0);
+        gd.addNumericField("Maximum σ", getPrefs("maxSigma", 15), 0);
+
+        gd.addNumericField("Magnification", getPrefs("magnification", 5), 0);
+
+        gd.addNumericField("Number of repeats", getPrefs("nRepeats", 100), 0);
+
+    }
 
     @Override
     public boolean loadSettings() {
+        minAlpha = gd.getNextNumber();
+        maxAlpha = gd.getNextNumber();
+        minBeta = gd.getNextNumber();
+        maxBeta = gd.getNextNumber();
+        minSigma = gd.getNextNumber();
+        maxSigma = gd.getNextNumber();
+
+        magnification = (int) gd.getNextNumber();
+        nRepeats = (int) gd.getNextNumber();
+
+        setPrefs("minAlpha", minAlpha);
+        setPrefs("maxAlpha", maxAlpha);
+        setPrefs("minBeta", minBeta);
+        setPrefs("maxBeta", maxBeta);
+        setPrefs("minSigma", minSigma);
+        setPrefs("maxSigma", maxSigma);
+        setPrefs("magnification", magnification);
+        setPrefs("nRepeats", nRepeats);
+
         return true;
     }
 
@@ -52,113 +87,119 @@ public class BasicTesting_ extends _BaseDialog_ {
         h_SR = fpSR.getHeight();
         nPixelsSR = w_SR * h_SR;
 
-        magnification = 5;
+        //set up arrays to store real and estimated parameters
+        double[] trueAlphas = new double[nRepeats];
+        double[] trueBetas = new double[nRepeats];
+        double[] trueSigmas = new double[nRepeats];
 
-        trueAlpha = random.nextDouble()*(maxAlpha-minAlpha) + minAlpha;
-        trueBeta = random.nextDouble()*(maxBeta-minBeta) + minBeta;
-        trueSigma = random.nextDouble()*(maxSigma-minSigma) + minSigma;
-        //trueSigma = 5;
-
-        log.msg("-----Simulated GT parameters-----");
-        log.msg("a = "+trueAlpha+", B = "+trueBeta+", sig ="+trueSigma);
-        log.msg("---------------------------------");
-
-        FloatProcessor fpRef = (FloatProcessor) fpSR.duplicate();
-        fpRef.multiply(trueAlpha);
-        fpRef.add(trueBeta);
-        fpRef.blurGaussian(trueSigma);
-        fpRef = (FloatProcessor) fpRef.resize(w_SR/magnification, h_SR/magnification);
-
-        impRef = new ImagePlus("Widefield", fpRef);
-        impRef.show();
-
-        w_Ref = fpRef.getWidth();
-        h_Ref = fpRef.getHeight();
+        double[] estimatedAlphas = new double[nRepeats];
+        double[] estimatedBetas = new double[nRepeats];
+        double[] estimatedSigmas = new double[nRepeats];
 
 
-        long startTime = System.currentTimeMillis();
+        for(int n=0; n<nRepeats; n++){
+            log.status("Trial "+(n+1)+"/"+nRepeats);
+            log.progress(n, nRepeats);
+            //get parameters for this run
+            trueAlpha = random.nextDouble()*(maxAlpha-minAlpha) + minAlpha;
+            trueBeta = random.nextDouble()*(maxBeta-minBeta) + minBeta;
+            trueSigma = random.nextDouble()*(maxSigma-minSigma) + minSigma;
 
-        // PREPARATION
-        /// images
-        float[] pixelsRef = (float[]) fpRef.getPixels();
+            trueAlphas[n] = trueAlpha;
+            trueBetas[n] = trueBeta;
+            trueSigmas[n] = trueSigma;
 
-        /// ones matrix
-        float[] ones = new float[nPixelsSR];
-        for(int i=0; i<nPixelsSR; i++){ones[i] = 1;}
+            //generate reference image
+            FloatProcessor fpRef = (FloatProcessor) fpSR.duplicate();
+            fpRef.multiply(trueAlpha);
+            fpRef.add(trueBeta);
+            fpRef.blurGaussian(trueSigma);
+            fpRef = (FloatProcessor) fpRef.resize(w_SR/magnification, h_SR/magnification);
 
-        // BRUTE FORCE
-        float sigmaStep = 0.1f;
-        float sigmaRange = (float) (maxSigma-minSigma);
-        int nSteps = (int) (sigmaRange/sigmaStep);
+            w_Ref = fpRef.getWidth();
+            h_Ref = fpRef.getHeight();
 
-        float[] sigmas = new float[nSteps];
-        float[] errors = new float[nSteps];
-        float[] alphas = new float[nSteps];
-        float[] betas = new float[nSteps];
 
-        ImageStack imsConvolved = new ImageStack(w_SR, h_SR, nSteps);
+            //prepare arrays for optimisation
 
-        for(int n=0; n<nSteps; n++){
-            float sigma = (float) (minSigma + n*sigmaStep);
+            /// images
+            float[] pixelsRef = (float[]) fpRef.getPixels();
 
+            /// ones matrix
+            float[] ones = new float[nPixelsSR];
+            for(int i=0; i<nPixelsSR; i++){ones[i] = 1;}
+
+            // UNIVARIATE OPTIMISER
+            //setup optimizer
+            sigmaOptimiseFunction f = new BasicTesting_.sigmaOptimiseFunction(fpSR, pixelsRef, ones);
+            UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
+            UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
+                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, 20));
+            double estimatedSigma = result.getPoint();
+
+            // GET ALPHA AND BETA
             FloatProcessor blurredFp = (FloatProcessor) fpSR.duplicate();
             FloatProcessor blurredOnes = new FloatProcessor(w_SR, h_SR, ones);
-            blurredFp.blurGaussian(sigma);
-            blurredOnes.blurGaussian(sigma);
+            blurredFp.blurGaussian(result.getPoint());
+            blurredOnes.blurGaussian(result.getPoint());
 
             blurredFp = (FloatProcessor) blurredFp.resize(w_Ref, h_Ref);
             blurredOnes = (FloatProcessor) blurredOnes.resize(w_Ref, h_Ref);
 
             float[] aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRef, (float[]) blurredOnes.getPixels());
+            double estimatedAlpha = aB[0];
+            double estimatedBeta = aB[1];
 
-            FloatProcessor finalFpSR = (FloatProcessor) fpSR.duplicate();
-            finalFpSR.multiply(aB[0]);
-            finalFpSR.add(aB[1]);
-            finalFpSR.blurGaussian(sigma);
-            FloatProcessor finalFpSRResized = (FloatProcessor) finalFpSR.resize(w_Ref, h_Ref);
-
-            imsConvolved.setProcessor(finalFpSR, n+1);
-
-            float error = calculateRMSE(pixelsRef, (float[]) finalFpSRResized.getPixels());
-
-            sigmas[n] = sigma;
-            errors[n] = error;
-            alphas[n] = aB[0];
-            betas[n] = aB[1];
+            estimatedAlphas[n] = estimatedAlpha;
+            estimatedBetas[n] = estimatedBeta;
+            estimatedSigmas[n] = estimatedSigma;
         }
 
-        new Plot("Error vs sigma", "Sigma", "RMSE", sigmas, errors).show();
-        new Plot("Alpha vs sigma", "Sigma", "Alpha", sigmas, alphas).show();
-        new Plot("Beta vs sigma", "Sigma", "Beta", sigmas, betas).show();
+        //calculate percentage errors on estimated parameters
+        double[] averagePercentageErrors = new double[3], stdevPercentageErrors = new double[3];
 
 
-        // UNIVARIATE OPTIMISER
-        //setup optimizer
-        sigmaOptimiseFunction f = new BasicTesting_.sigmaOptimiseFunction(fpSR, pixelsRef, ones);
-        UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
-        UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
-                new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, 20));
-        log.msg("Best sigma is: " + result.getPoint());
+        for(int n=0; n<nRepeats; n++){
+            double thisErrorAlpha = (trueAlphas[n]-estimatedAlphas[n])/trueAlphas[n];
+            double thisErrorBeta = (trueBetas[n]-estimatedBetas[n])/trueBetas[n];
+            double thisErrorSigma = (trueSigmas[n]-estimatedSigmas[n])/trueSigmas[n];
+            averagePercentageErrors[0] += thisErrorAlpha/nRepeats;
+            averagePercentageErrors[1] += thisErrorBeta/nRepeats;
+            averagePercentageErrors[2] += thisErrorSigma/nRepeats;
+        }
 
-        float[] errorList = toArray(f.getErrorList(), 1.0f);
-        float[] sigmaList = toArray(f.getSigmaList(), 1.0f);
+        for(int n=0; n<nRepeats; n++){
+            double thisDifferenceAlpha = Math.pow((trueAlphas[n]-estimatedAlphas[n])/trueAlphas[n] - averagePercentageErrors[0],2);
+            double thisDifferenceBeta = Math.pow((trueBetas[n]-estimatedBetas[n])/trueBetas[n] - averagePercentageErrors[1],2);
+            double thisDifferenceSigma = Math.pow((trueSigmas[n]-estimatedSigmas[n])/trueSigmas[n] - averagePercentageErrors[2],2);
+            stdevPercentageErrors[0] += thisDifferenceAlpha/nRepeats;
+            stdevPercentageErrors[1] += thisDifferenceBeta/nRepeats;
+            stdevPercentageErrors[2] += thisDifferenceSigma/nRepeats;
+        }
+        stdevPercentageErrors[0] = Math.sqrt(stdevPercentageErrors[0]);
+        stdevPercentageErrors[1] = Math.sqrt(stdevPercentageErrors[1]);
+        stdevPercentageErrors[2] = Math.sqrt(stdevPercentageErrors[2]);
 
-        new Plot("Optimiser: error vs sigma", "Sigma", "RMSE", sigmaList, errorList).show();
+        //plot
+        Plot alphaPlot = new Plot("Estimated vs true α", "True α", "Estimated α");
+        alphaPlot.addPoints(trueAlphas, estimatedAlphas, Plot.CIRCLE);
+        alphaPlot.show();
+        Plot betaPlot = new Plot("Estimated vs true β", "True β", "Estimated β");
+        betaPlot.addPoints(trueBetas, estimatedBetas, Plot.CIRCLE);
+        betaPlot.show();
+        Plot sigmaPlot = new Plot("Estimated vs true σ", "True σ", "Estimated σ");
+        sigmaPlot.addPoints(trueSigmas, estimatedSigmas, Plot.CIRCLE);
+        sigmaPlot.show();
 
-        // GET ALPHA AND BETA
-        FloatProcessor blurredFp = (FloatProcessor) fpSR.duplicate();
-        FloatProcessor blurredOnes = new FloatProcessor(w_SR, h_SR, ones);
-        blurredFp.blurGaussian(result.getPoint());
-        blurredOnes.blurGaussian(result.getPoint());
-
-        blurredFp = (FloatProcessor) blurredFp.resize(w_Ref, h_Ref);
-        blurredOnes = (FloatProcessor) blurredOnes.resize(w_Ref, h_Ref);
-
-        float[] aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRef, (float[]) blurredOnes.getPixels());
-        float alpha = aB[0];
-        float beta = aB[1];
-
-        log.msg("Alpha is: " + alpha + ", beta is: " + beta);
+        ResultsTable rt = new ResultsTable();
+        String[] labels = new String[]{"α", "β", "σ"};
+        for(int i=0; i<3; i++){
+            rt.incrementCounter();
+            rt.addValue("Parameter", labels[i]);
+            rt.addValue("Average % error", averagePercentageErrors[i]*100);
+            rt.addValue("Stdev % error", stdevPercentageErrors[i]*100);
+        }
+        rt.show("Percentage errors (n="+nRepeats+")");
 
     }
 
