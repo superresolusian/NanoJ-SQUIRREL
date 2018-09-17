@@ -118,20 +118,6 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
                 Polygon p = new Polygon(xVals, yVals, nVertices);
                 fp.fillPolygon(p);
 
-//                int w = (int) Math.floor(random.nextDouble()*width*0.1);
-//                int h = (int) Math.floor(random.nextDouble()*width*0.1);
-//
-//                for(int y=max(0, y0-h/2); y<min(width, y0+h/2); y++){
-//                    double lengthVariations = random.nextDouble()/2 + 0.5;
-//                    int lengthLine = (int) Math.floor(lengthVariations*w);
-//                    int xStart = max(0, x0-lengthLine/2);
-//                    for(int x=xStart; x<min(width, xStart+lengthLine); x++){
-//                        fp.setf(x, y, 1.0f);
-//                    }
-//                }
-//
-//                Line l = new Line(1, 2, 3, 4);
-//                l.drawPixels(fp);
                 structurePixels = getSum(fp);
             }
 
