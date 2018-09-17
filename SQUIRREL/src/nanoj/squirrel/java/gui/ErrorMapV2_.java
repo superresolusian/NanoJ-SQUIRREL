@@ -328,17 +328,15 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         ResultsTable rt = new ResultsTable();
 
         /*
-        For 700nm FWHM of PSF is 305nm. Give leeway and say that maximum expected PSF FWHM is 400nm.
-        Therefore sigma of Gaussian PSF is 400/2.35482 nm = (400/2.35482)/pixelSize pixels
-        Nyquist calculations if data not calibrated:
-        Resolution of microscope = FWHM of PSF
-        => If correctly sampled, resolution = 2 pixels. More likely to oversample than undersample so make generous
-        assumption that resolution = 4 pixels
-        => Sigma of Gaussian PSF would be 4/2.35482 pixels = 1.6986
-        => Calculating sigma on upsampled grid therefore multiply by magnification
+        For maximum expected emission wavelength λem = 700nm, PSF FWHM = 305nm (Born & Wolf)
+        => sigma of Gaussian PSF = 305/2.35482 nm = 130nm
+        If no calibration data, assume arbitrary pixel size of 100nm
+        => sigma of Gaussian PSF = 130/100 = 1.3 pixels
+        Add 10% leeway => maximum sigma = 1.3*1.1 = 1.43 pixels
+        Sigma is calcuated on upsampled grid therefore multiply by magnification
          */
 
-        float maxSigmaBoundary = (4/2.35482f)*magnification;
+        float maxSigmaBoundary = 1.43f*magnification;
 
         // Adjust maxSigmaBoundary if there is calibration data
         String pixelUnitRef = impRef.getCalibration().getUnit();
