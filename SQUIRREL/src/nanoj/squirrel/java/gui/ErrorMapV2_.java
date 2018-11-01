@@ -50,7 +50,8 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
     ArrayList<String> titles = new ArrayList<String>();
     String[] imageTitles;
 
-    boolean framePurge, borderControl;
+    int maxSigma;
+    boolean showPlot, framePurge, borderControl;
     boolean doRegistration;
     int maxExpectedMisalignment;
     int maxSRStackSize;
@@ -100,7 +101,6 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
     @Override
     public void setupDialog() {
-
 
         // create string array with 'estimate RSF' as option
         String[] imageTitlesRSF = new String[imageTitles.length + 1];
@@ -209,6 +209,8 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
     // Import settings from advanced dialog
     public boolean loadSettingsFromPrefs() {
 
+        maxSigma = errorMap_ExtraSettings.getPrefs("maxSigma", 200);
+        showPlot = errorMap_ExtraSettings.getPrefs("showPlot", false);
         framePurge = errorMap_ExtraSettings.getPrefs("framePurge", false);
         borderControl = errorMap_ExtraSettings.getPrefs("borderControl", true);
 
@@ -240,6 +242,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
                 log.status("Checking stack, frame " + n);
                 log.progress(n, nSlicesSR);
 
+                ImageProcessor ip = imsSR.getProcessor(n);
                 FloatProcessor fp = imsSR.getProcessor(n).convertToFloatProcessor();
                 float[] pixels = (float[]) fp.getPixels();
 
@@ -309,8 +312,6 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         float[] pixelsRef = (float[]) fpRef.getPixels();
         float[] ones = new float[nPixelsSR];
         for(int i=0; i<nPixelsSR; i++){ones[i] = 1;}
-        ImageProcessor ipRef = imsRef.getProcessor(1);
-        int[] histRef = ipRef.getHistogram();
 
         // Set up pixel array for error map generation
         FloatProcessor fpRefScaledToSR = (FloatProcessor) fpRef.duplicate();
@@ -334,24 +335,31 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         => sigma of Gaussian PSF = 130/100 = 1.3 pixels
         Add 10% leeway => maximum sigma = 1.3*1.1 = 1.43 pixels
         Sigma is calcuated on upsampled grid therefore multiply by magnification
+
+        However, this never seems to be quite enough blur. Instead, choose max sigma = 200nm...
          */
 
-        float maxSigmaBoundary = 1.43f*magnification;
+        float maxSigmaBoundary = 0;
 
         // Adjust maxSigmaBoundary if there is calibration data
         String pixelUnitRef = impRef.getCalibration().getUnit();
         double pixelSizeNm;
         if(pixelUnitRef.equals("nm")){
+            log.msg("Detected nm!");
             pixelSizeNm = impRef.getCalibration().pixelWidth;
-            maxSigmaBoundary = (float) ((400/2.35482)/pixelSizeNm)*magnification;
-            log.msg("Setting maximum sigma to "+df.format(400/2.35482)+" nm to avoid overblurring");
+            maxSigmaBoundary = (float) (maxSigma/pixelSizeNm)*magnification;
+            log.msg("Setting maximum sigma to "+maxSigma+"nm ("+maxSigmaBoundary+" pixels) to avoid overblurring");
         }
         else if(pixelUnitRef.equals("micron")|| pixelUnitRef.equals("microns") || pixelUnitRef.equals("µm")){
+            log.msg("Detected µm!");
             pixelSizeNm = impRef.getCalibration().pixelWidth * 1000;
-            maxSigmaBoundary = (float) ((400/2.35482)/pixelSizeNm)*magnification;
-            log.msg("Setting maximum sigma to "+df.format(400/2.35482)+" nm to avoid overblurring");
+            maxSigmaBoundary = (float) (maxSigma/pixelSizeNm)*magnification;
+            log.msg("Setting maximum sigma to "+maxSigma+"nm ("+maxSigmaBoundary+" pixels) to avoid overblurring");
         }
         else{
+            //assign arbitrary pixel size of 100nm
+            pixelSizeNm = 100;
+            maxSigmaBoundary = (float) (maxSigma/pixelSizeNm)*magnification;
             log.msg("Setting maximum sigma to "+maxSigmaBoundary+" pixels to avoid overblurring");
         }
 
@@ -382,9 +390,11 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             float[] errorList = toArray(f.getErrorList(), 1.0f);
             float[] sigmaList = toArray(f.getSigmaList(), 1.0f);
 
-            Plot plot = new Plot("Brent optimiser - frame "+n+": Error vs Sigma", "Sigma", "Error");
-            plot.addPoints(sigmaList, errorList, Plot.CIRCLE);
-            plot.show();
+            if(showPlot) {
+                Plot plot = new Plot("Brent optimiser - frame " + n + ": Error vs Sigma", "Sigma", "Error");
+                plot.addPoints(sigmaList, errorList, Plot.CIRCLE);
+                plot.show();
+            }
 
             if(abs(sigma_linear-maxSigmaBoundary)<0.0001f){
                 overblurFlag = true;

@@ -23,6 +23,10 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
         gd = new NonBlockingGenericDialog("Calculate Error Map Advanced Settings...");
         gd.hideCancelButton();
 
+        gd.addMessage("-=-= Optimiser settings =-=-");
+        gd.addNumericField("Maximum expected sigma for RSF in nm (default: 150nm)", getPrefs("maxSigma", 150), 0);
+        gd.addCheckbox("Show optimisation plot (default: disabled)", getPrefs("showPlot", false));
+
         gd.addMessage("-=-= Frame purge =-=-");
         gd.addCheckbox("Check and purge empty frames?", getPrefs("framePurge", false));
 
@@ -41,11 +45,12 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
         gd.addCheckbox("Show_positive and negative contributions to error map (default: disabled)", getPrefs("showPositiveNegative", false));
         gd.addMessage("If the above checkbox is disabled, error map will just contain absolute values of errors.", new Font("Arial", Font.ITALIC, 12));
 
-
     }
 
     public boolean loadSettings(){
 
+        int maxSigma = (int) gd.getNextNumber();
+        boolean showPlot = gd.getNextBoolean();
         boolean framePurge = gd.getNextBoolean();
         boolean borderControl = gd.getNextBoolean();
 
@@ -57,6 +62,8 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
         boolean showRSF = gd.getNextBoolean();
         boolean showPositiveNegative = gd.getNextBoolean();
 
+        setPrefs("maxSigma", maxSigma);
+        setPrefs("showPlot", showPlot);
         setPrefs("framePurge", framePurge);
         setPrefs("borderControl", borderControl);
 
