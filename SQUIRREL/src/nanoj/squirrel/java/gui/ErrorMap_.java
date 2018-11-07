@@ -416,7 +416,7 @@ public class ErrorMap_ extends _BaseSQUIRRELDialog_ {
             if(visualiseParameterEvolution) {
                 // Visualization of parameter evolution
                 kPSOErrorMap.plotOptimizationEvolution(new String[] {"Alpha", "Beta", "Sigma"});
-                kPSOErrorMap.plotOptimizationEvolution3D(512, 512, 0, 1, 2).show();
+                //kPSOErrorMap.plotOptimizationEvolution3D(512, 512, 0, 1, 2).show();
                 kPSOErrorMap.renderOptimizationEvolution2D(128, 128, 0, 1).show();
                 kPSOErrorMap.renderOptimizationEvolution2D(128, 128, 0, 2).show();
             }

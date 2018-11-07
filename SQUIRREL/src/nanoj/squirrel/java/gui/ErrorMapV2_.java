@@ -38,7 +38,7 @@ import static nanoj.squirrel.java.gui.ImagesHelper.magnify;
 public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
     private static final float ROOT2 = (float) Math.sqrt(2);
-    private static final String OVERBLUR_MESSAGE = "RSF constrained as no good minimum found";
+    private static final String OVERBLUR_MESSAGE = "RSF is unrealistic size... Optimising to PSF estimate";
 
     String titleRefImage = "", titleRSFImage = "", titleSRImage = "", noRSFString = "-- RSF unknown, estimate via optimisation --";
     boolean showAdvancedSettings, _showAdvancedSettings = false;
@@ -321,11 +321,16 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
         // Set up output
         int maxRSFWidth = 0;
+        int maxRSFWidthBoundary = 0;
         FloatProcessor[] fpRSFArray = new FloatProcessor[nSlicesSR];
+        FloatProcessor[] fpRSFArrayBoundary = new FloatProcessor[nSlicesSR];
 
         ImageStack imsSRConvolved = new ImageStack(w_SR, h_SR, nSlicesSR);
+        ImageStack imsSRConvolvedBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsEMap = new ImageStack(w_SR, h_SR, nSlicesSR);
+        ImageStack imsEMapBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsSRNormalised = new ImageStack(w_SR, h_SR, nSlicesSR);
+        ImageStack imsSRNormalisedBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
         ResultsTable rt = new ResultsTable();
 
         /*
@@ -339,7 +344,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         However, this never seems to be quite enough blur. Instead, choose max sigma = 200nm...
          */
 
-        float maxSigmaBoundary = 0;
+        float maxSigmaBoundary;
 
         // Adjust maxSigmaBoundary if there is calibration data
         String pixelUnitRef = impRef.getCalibration().getUnit();
@@ -348,22 +353,23 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             log.msg("Detected nm!");
             pixelSizeNm = impRef.getCalibration().pixelWidth;
             maxSigmaBoundary = (float) (maxSigma/pixelSizeNm)*magnification;
-            log.msg("Setting maximum sigma to "+maxSigma+"nm ("+maxSigmaBoundary+" pixels) to avoid overblurring");
+            log.msg("Maximum sensible RSF sigma = "+maxSigma+"nm ("+maxSigmaBoundary+" SR pixels)");
         }
         else if(pixelUnitRef.equals("micron")|| pixelUnitRef.equals("microns") || pixelUnitRef.equals("µm")){
             log.msg("Detected µm!");
             pixelSizeNm = impRef.getCalibration().pixelWidth * 1000;
             maxSigmaBoundary = (float) (maxSigma/pixelSizeNm)*magnification;
-            log.msg("Setting maximum sigma to "+maxSigma+"nm ("+maxSigmaBoundary+" pixels) to avoid overblurring");
+            log.msg("Maximum sensible RSF sigma = "+maxSigma+"nm ("+maxSigmaBoundary+" SR pixels)");
         }
         else{
             //assign arbitrary pixel size of 100nm
             pixelSizeNm = 100;
             maxSigmaBoundary = (float) (maxSigma/pixelSizeNm)*magnification;
-            log.msg("Setting maximum sigma to "+maxSigmaBoundary+" pixels to avoid overblurring");
+            log.msg("Maximum sensible RSF sigma = "+maxSigmaBoundary+" SR pixels");
         }
 
         long loopStart = System.nanoTime();
+        boolean overblurExists = false;
 
         for(int n=1; n<=nSlicesSR; n++){
 
@@ -382,7 +388,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
             /// run optimizer
             UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
-                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, maxSigmaBoundary)); //NYQUIST ASSUMED
+                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, 5*magnification)); //NYQUIST NOT ASSUMED; limit to 5*magnification
             float sigma_linear = (float) result.getPoint();
             log.msg("Best sigma is: "+sigma_linear);
             log.msg("Best error is: "+result.getValue());
@@ -394,11 +400,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
                 Plot plot = new Plot("Brent optimiser - frame " + n + ": Error vs Sigma", "Sigma", "Error");
                 plot.addPoints(sigmaList, errorList, Plot.CIRCLE);
                 plot.show();
-            }
-
-            if(abs(sigma_linear-maxSigmaBoundary)<0.0001f){
-                overblurFlag = true;
-                log.msg(OVERBLUR_MESSAGE);
+                plot.setFrozen(true);
             }
 
             // GET ALPHA AND BETA
@@ -416,6 +418,30 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
 
             log.msg("Alpha is: "+alpha+", beta is: "+beta);
 
+            // check if sigma hit the boundary
+
+            float alphaBoundary = alpha, betaBoundary = beta;
+            if(sigma_linear>maxSigmaBoundary){
+                overblurFlag = true;
+                overblurExists = true;
+                log.msg(OVERBLUR_MESSAGE);
+                // calculate alpha and beta with maxSigmaBoundary as blur
+                blurredFp = (FloatProcessor) fpSR.duplicate();
+                blurredOnes = new FloatProcessor(w_SR, h_SR, ones);
+                blurredFp.blurGaussian(maxSigmaBoundary);
+                blurredOnes.blurGaussian(maxSigmaBoundary);
+
+                blurredFp = (FloatProcessor) blurredFp.resize(w_Ref, h_Ref);
+                blurredOnes = (FloatProcessor) blurredOnes.resize(w_Ref, h_Ref);
+
+                aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRef, (float[]) blurredOnes.getPixels());
+                alphaBoundary = aB[0];
+                betaBoundary = aB[1];
+
+                log.msg("Intensity matching with constrained RSP - Alpha is: "+alphaBoundary+", beta is: "+betaBoundary);
+            }
+
+
             // POPULATE OUTPUT STACKS
 
             /// intensity-scaled stack
@@ -424,16 +450,47 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             fpSRIntensityScaled.add(beta);
             imsSRNormalised.setProcessor(fpSRIntensityScaled, n);
 
+            /// intensity-scaled boundary condition stack
+            FloatProcessor fpSRIntensityScaledBoundary = new FloatProcessor(w_SR, h_SR);
+            if(!overblurFlag) imsSRNormalisedBoundary.setProcessor(fpSRIntensityScaled, n);
+            else {
+                fpSRIntensityScaledBoundary = (FloatProcessor) fpSR.duplicate();
+                fpSRIntensityScaledBoundary.multiply(alphaBoundary);
+                fpSRIntensityScaledBoundary.add(betaBoundary);
+                imsSRNormalisedBoundary.setProcessor(fpSRIntensityScaledBoundary, n);
+            }
+
             /// intensity-scaled and convolved stack
             FloatProcessor fpSRIntensityScaledBlurred = (FloatProcessor) fpSRIntensityScaled.duplicate();
             fpSRIntensityScaledBlurred.blurGaussian(sigma_linear);
             imsSRConvolved.setProcessor(fpSRIntensityScaledBlurred, n);
+
+            /// intensity-scaled and convolved boundary condition stack
+            FloatProcessor fpSRIntensityScaledBlurredBoundary = fpSRIntensityScaledBlurred;
+            if(!overblurFlag) imsSRConvolvedBoundary.setProcessor(fpSRIntensityScaledBlurred, n);
+            else {
+                fpSRIntensityScaledBlurredBoundary = (FloatProcessor) fpSRIntensityScaledBoundary.duplicate();
+                fpSRIntensityScaledBlurredBoundary.blurGaussian(maxSigmaBoundary);
+                imsSRConvolvedBoundary.setProcessor(fpSRIntensityScaledBlurredBoundary, n);
+            }
 
             /// Generate RSF for this image
             log.status("Generating RSF");
             FloatProcessor fpRSF = getRSF(sigma_linear/magnification);
             fpRSFArray[n-1] = fpRSF;
             maxRSFWidth = max(maxRSFWidth, fpRSF.getWidth());
+
+            /// Generate boundary RSF for this image
+            if(!overblurFlag){
+                fpRSFArrayBoundary[n-1] = fpRSF;
+                maxRSFWidthBoundary = max(maxRSFWidth, fpRSF.getWidth());
+            }
+            else {
+                log.status("Generating constrained RSF");
+                FloatProcessor fpRSFBoundary = getRSF(maxSigmaBoundary / magnification);
+                fpRSFArrayBoundary[n - 1] = fpRSFBoundary;
+                maxRSFWidthBoundary = max(maxRSFWidthBoundary, fpRSFBoundary.getWidth());
+            }
 
             // CALCULATE METRICS AND MAP
             log.status("Calculating similarity...");
@@ -459,12 +516,47 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             }
             imsEMap.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsEMap), n);
 
+            // CALCULATE METRICS AND MAP FOR BOUNDARY PROBLEM CASES
+            double globalRMSEBoundary = globalRMSE, globalPPMCCBoundary = globalPPMCC;
+
+            if(!overblurFlag){
+                imsEMapBoundary.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsEMap), n);
+            }
+            else{
+                /// metrics
+                fpIntensityScaledBlurred_RefSize = (FloatProcessor) fpSRIntensityScaledBlurredBoundary.resize(w_Ref, h_Ref);
+                pixelsIntensityScaledBlurred_RefSize = (float[]) fpIntensityScaledBlurred_RefSize.getPixels();
+                globalRMSEBoundary = sqrt(calculateMSE(pixelsIntensityScaledBlurred_RefSize, pixelsRef));
+                globalPPMCCBoundary = calculatePPMCC(pixelsIntensityScaledBlurred_RefSize, pixelsRef, true);
+
+                /// error map
+                float[] pixelsEMapBoundary = new float[nPixelsSR];
+                float[] pixelsSRCBoundary = (float[]) fpSRIntensityScaledBlurredBoundary.getPixels();
+
+                for(int p=0; p<nPixelsSR; p++){
+                    float vRef = pixelsRefScaledToSR[p];
+                    float vSRC = pixelsSRC[p];
+
+                    if(showPositiveNegative) pixelsEMapBoundary[p] = (vRef - vSRC);
+                    else pixelsEMapBoundary[p] = abs(vRef-vSRC);
+                }
+                imsEMapBoundary.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsEMapBoundary), n);
+            }
+
             /// put error values into table
             rt.incrementCounter();
             rt.addValue("Frame", n);
             rt.addValue("RSP (Resolution Scaled Pearson-Correlation)", globalPPMCC);
             rt.addValue("RSE (Resolution Scaled Error)", globalRMSE);
             rt.addValue("Overblur warning", String.valueOf(overblurFlag));
+            if(!overblurFlag){
+                rt.addValue("RSP - constrained", "N/A");
+                rt.addValue("RSE - constrained", "N/A");
+            }
+            else{
+                rt.addValue("RSP - constrained", globalPPMCCBoundary);
+                rt.addValue("RSE - constrained", globalRMSEBoundary);
+            }
 
             if(nSlicesSR>1) {
                 double frameTime = ((System.nanoTime() - loopStart) / n) / 1e9;
@@ -510,11 +602,46 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
         }
         if(showRSF) new ImagePlus("Optimised RSF stack", imsRSF_rescaled).show();
 
-        rt.show("RSP and RSE values");
-
         ImagePlus impEMap = new ImagePlus(titleSRImage+" - Resolution Scaled Error-Map", imsEMap);
         applyLUT_SQUIRREL_Errors(impEMap);
         impEMap.show();
+
+        if(overblurExists){
+            if(showIntensityNormalised || !noCrop){
+                new ImagePlus(titleSRImage +" - " +borderString +registrationString+" - intensity-normalised - Constrained to RSF boundary", imsSRNormalisedBoundary).show();
+            }
+
+            if(showConvolved){
+                new ImagePlus(titleSRImage+" - Convolved with RSF - Constrained to RSF boundary", imsSRConvolvedBoundary).show();
+            }
+            if(showRSF){
+                ImageStack imsRSF_rescaledBoundary = new ImageStack(maxRSFWidthBoundary, maxRSFWidthBoundary, nSlicesSR);
+                centreLargest = maxRSFWidthBoundary/2;
+
+                for(int n=1; n<=nSlicesSR; n++){
+                    FloatProcessor fp = fpRSFArrayBoundary[n-1];
+                    int centre = fp.getWidth()/2;
+                    FloatProcessor fpInsert = new FloatProcessor(maxRSFWidthBoundary, maxRSFWidthBoundary);
+                    fpInsert.insert(fp, centreLargest-centre, centreLargest-centre);
+                    imsRSF_rescaledBoundary.setProcessor(fpInsert, n);
+                }
+                new ImagePlus("Optimised RSF stack", imsRSF_rescaledBoundary).show();
+            }
+            ImagePlus impEMapBoundary = new ImagePlus(titleSRImage+" - Resolution Scaled Error-Map - Constrained to RSF boundary", imsEMapBoundary);
+            applyLUT_SQUIRREL_Errors(impEMapBoundary);
+            impEMapBoundary.show();
+        }
+
+//        Random rand = new Random();
+//        int randInt = rand.nextInt(100);
+//        for(int i=0; i<randInt; i++){
+//            ImagePlus thisImp = impEMap.duplicate();
+//            thisImp.show();
+//        }
+
+        rt.show("RSP and RSE values");
+
+        IJ.run("Tile");
 
         log.msg("SQUIRREL analysis took "+(System.currentTimeMillis()-startTime)/1000+"s");
 
