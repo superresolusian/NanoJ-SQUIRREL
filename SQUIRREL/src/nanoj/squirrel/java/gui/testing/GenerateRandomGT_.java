@@ -36,7 +36,7 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
 
         gd.addNumericField("Image width (pixels)", getPrefs("width", 500), 0);
         gd.addRadioButtonGroup("Type of structure", structureOptions, 1, 3, getPrefs("structure", structureOptions[0]));
-        gd.addNumericField("Approximate fraction of image occupied by structure", getPrefs("coverage", 0.05), 2);
+        gd.addNumericField("Approximate fraction of image occupied by structure", getPrefs("coverage", 0.05), 3);
     }
 
     @Override

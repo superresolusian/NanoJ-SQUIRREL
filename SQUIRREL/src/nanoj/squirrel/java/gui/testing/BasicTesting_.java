@@ -39,10 +39,10 @@ public class BasicTesting_ extends _BaseDialog_ {
     public void setupDialog() {
         gd = new NonBlockingGenericDialog("Test accuracy of α, β and σ");
 
-        gd.addNumericField("Minimum α", getPrefs("minAlpha", 100), 0);
+        gd.addNumericField("Minimum α", getPrefs("minAlpha", 100), 1);
         gd.addNumericField("Maximum α", getPrefs("maxAlpha", 10000), 0);
 
-        gd.addNumericField("Minimum β", getPrefs("minBeta", 50), 0);
+        gd.addNumericField("Minimum β", getPrefs("minBeta", 50), 1);
         gd.addNumericField("Maximum β", getPrefs("maxBeta", 5000), 0);
 
         gd.addNumericField("Minimum σ", getPrefs("minSigma", 1), 0);
@@ -158,11 +158,13 @@ public class BasicTesting_ extends _BaseDialog_ {
         //calculate percentage errors on estimated parameters
         double[] averagePercentageErrors = new double[3], stdevPercentageErrors = new double[3];
 
-
         for(int n=0; n<nRepeats; n++){
             double thisErrorAlpha = (trueAlphas[n]-estimatedAlphas[n])/trueAlphas[n];
             double thisErrorBeta = (trueBetas[n]-estimatedBetas[n])/trueBetas[n];
             double thisErrorSigma = (trueSigmas[n]-estimatedSigmas[n])/trueSigmas[n];
+            if(thisErrorAlpha>0.1 || thisErrorBeta>0.1 || thisErrorSigma>0.1){
+                log.msg("POOR SOLUTION AT DATAPOINT "+(n+1)+": alpha= "+trueAlphas[n]+", beta= "+trueBetas[n]+", sigma = "+trueSigmas[n]);
+            }
             averagePercentageErrors[0] += thisErrorAlpha/nRepeats;
             averagePercentageErrors[1] += thisErrorBeta/nRepeats;
             averagePercentageErrors[2] += thisErrorSigma/nRepeats;
