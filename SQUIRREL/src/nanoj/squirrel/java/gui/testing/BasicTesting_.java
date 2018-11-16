@@ -45,8 +45,8 @@ public class BasicTesting_ extends _BaseDialog_ {
         gd.addNumericField("Minimum β", getPrefs("minBeta", 50), 1);
         gd.addNumericField("Maximum β", getPrefs("maxBeta", 5000), 0);
 
-        gd.addNumericField("Minimum σ", getPrefs("minSigma", 1), 0);
-        gd.addNumericField("Maximum σ", getPrefs("maxSigma", 15), 0);
+        gd.addNumericField("Minimum σ", getPrefs("minSigma", 1), 1);
+        gd.addNumericField("Maximum σ", getPrefs("maxSigma", 15), 1);
 
         gd.addNumericField("Magnification", getPrefs("magnification", 5), 0);
 
