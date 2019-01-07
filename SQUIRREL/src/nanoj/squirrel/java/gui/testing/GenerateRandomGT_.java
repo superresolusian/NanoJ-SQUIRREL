@@ -125,6 +125,8 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
 
         double actualCoverage = (double) structurePixels/(width*width);
 
+        fp.multiply(1000); //to prevent silly values after blurring
+
         new ImagePlus("GT - true coverage="+actualCoverage, fp).show();
 
     }
