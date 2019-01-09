@@ -632,12 +632,7 @@ public class ErrorMapV2_ extends _BaseSQUIRRELDialog_ {
             impEMapBoundary.show();
         }
 
-//        Random rand = new Random();
-//        int randInt = rand.nextInt(100);
-//        for(int i=0; i<randInt; i++){
-//            ImagePlus thisImp = impEMap.duplicate();
-//            thisImp.show();
-//        }
+
 
         rt.show("RSP and RSE values");
 
