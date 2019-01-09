@@ -20,6 +20,7 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
     int width;
     String structure;
     double coverage;
+    boolean randomiseIntensity;
 
     Random random = new Random();
 
@@ -37,6 +38,7 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
         gd.addNumericField("Image width (pixels)", getPrefs("width", 500), 0);
         gd.addRadioButtonGroup("Type of structure", structureOptions, 1, 3, getPrefs("structure", structureOptions[0]));
         gd.addNumericField("Approximate fraction of image occupied by structure", getPrefs("coverage", 0.05), 3);
+        gd.addCheckbox("Randomise intensity?", getPrefs("randomiseIntensity", false));
     }
 
     @Override
@@ -44,10 +46,12 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
         width = (int) gd.getNextNumber();
         structure = gd.getNextRadioButton();
         coverage = gd.getNextNumber();
+        randomiseIntensity = gd.getNextBoolean();
 
         setPrefs("width", width);
         setPrefs("structure", structure);
         setPrefs("coverage", coverage);
+        setPrefs("randomiseIntensity", randomiseIntensity);
 
         return true;
     }
@@ -68,7 +72,8 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
             while(structurePixels<target){
                 int x = (int) Math.floor(random.nextDouble()*width);
                 int y = (int) Math.floor(random.nextDouble()*width);
-                fp.setf(x, y, 1.0f);
+                if(randomiseIntensity) fp.setf(x, y, (float) max(0.01, random.nextGaussian()+1.0));
+                else fp.setf(x,y,1.0f);
                 structurePixels = getSum(fp);
             }
         }
@@ -80,7 +85,7 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
                 int x2 = (int) Math.floor(random.nextDouble() * width);
                 int y1 = (int) Math.floor(random.nextDouble() * width);
                 int y2 = (int) Math.floor(random.nextDouble() * width);
-
+                if(randomiseIntensity) fp.setColor(max(0.01,random.nextGaussian() + 1));
                 fp.drawLine(x1, y1, x2, y2);
 
                 structurePixels = getSum(fp);
@@ -116,6 +121,7 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
                 }
 
                 Polygon p = new Polygon(xVals, yVals, nVertices);
+                if(randomiseIntensity) fp.setColor(max(0.01,random.nextGaussian()+1.0));
                 fp.fillPolygon(p);
 
                 structurePixels = getSum(fp);
@@ -135,7 +141,7 @@ public class GenerateRandomGT_ extends _BaseDialog_ {
         float[] pixels = (float[]) fp.getPixels();
         float v=0;
         for(int i=0; i<pixels.length; i++){
-            v += pixels[i];
+            if(pixels[i]>0) v++;;
         }
         return (int) v;
     }
