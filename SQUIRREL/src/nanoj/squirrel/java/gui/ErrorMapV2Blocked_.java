@@ -377,11 +377,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             FloatProcessor fpSRConvolved = new FloatProcessor(w_SR, h_SR);
             FloatProcessor fpSRConvolvedBoundary = new FloatProcessor(w_SR, h_SR);
 
-            //FloatProcessor fpEMap = new FloatProcessor(w_SR, h_SR);
-            //FloatProcessor fpEMapBoundary = new FloatProcessor(w_SR, h_SR);
-            //FloatProcessor fpSRNormalised = new FloatProcessor(w_SR, h_SR);
-            //FloatProcessor fpSRNormalisedBoundary = new FloatProcessor(w_SR, h_SR);
-
             int maxRSFWidth = 0;
             int maxRSFWidthBoundary = 0;
             FloatProcessor[] fpRSFArray = new FloatProcessor[blocksPerXAxis*blocksPerYAxis];
@@ -389,21 +384,12 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
             boolean globalOverblurFlag = false;
 
-            //ImageStack imsSRBlocks = new ImageStack(w_SR/blocksPerXAxis, h_SR/blocksPerYAxis, nBlocks);
-            //ImageStack imsRefBlocks = new ImageStack(w_Ref/blocksPerXAxis, w_Ref/blocksPerYAxis, nBlocks);
 
-            //int counter = 1;
             for (int nYB = 0; nYB < blocksPerYAxis; nYB++) {
                 for (int nXB = 0; nXB < blocksPerXAxis; nXB++) {
 
                     boolean localOverblurFlag = false;
                     FloatProcessor fpSRBlock = getBlockFp(fpSR, nYB, nXB);
-                    //FloatProcessor fpRefBlock = getBlockFp(fpRef, nYB, nXB);
-
-//                    imsSRBlocks.setProcessor(fpSRBlock, counter);
-//                    imsRefBlocks.setProcessor(fpRefBlock, counter);
-//                    counter++;
-
                     float[] pixelsRefBlock = getBlockPixels(fpRef, nYB, nXB);
 
                     int blockWidthSR = fpSRBlock.getWidth();
@@ -412,7 +398,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                     int yStartSR = nYB*blockHeightSR;
                     int nPixelsSRBlock = blockWidthSR*blockHeightSR;
                     int blockWidthRef = blockWidthSR/magnification;
-                    int blockHeightRef = blockWidthRef/magnification;
+                    int blockHeightRef = blockHeightSR/magnification;
 
                     float[] ones = new float[nPixelsSRBlock];
                     for(int i=0; i<nPixelsSRBlock; i++){ones[i] = 1;}
