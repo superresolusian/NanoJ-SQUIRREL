@@ -359,6 +359,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         // blocking
         blocksPerXAxis = blocksPerAxis;
         blocksPerYAxis = (int) (blocksPerXAxis * (((double) h_Ref)/w_Ref));
+        int nBlocks = blocksPerXAxis*blocksPerYAxis;
 
         long loopStart = System.nanoTime();
         boolean overblurExists = false;
@@ -388,17 +389,27 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
             boolean globalOverblurFlag = false;
 
+            //ImageStack imsSRBlocks = new ImageStack(w_SR/blocksPerXAxis, h_SR/blocksPerYAxis, nBlocks);
+            //ImageStack imsRefBlocks = new ImageStack(w_Ref/blocksPerXAxis, w_Ref/blocksPerYAxis, nBlocks);
+
+            //int counter = 1;
             for (int nYB = 0; nYB < blocksPerYAxis; nYB++) {
                 for (int nXB = 0; nXB < blocksPerXAxis; nXB++) {
 
                     boolean localOverblurFlag = false;
                     FloatProcessor fpSRBlock = getBlockFp(fpSR, nYB, nXB);
+                    //FloatProcessor fpRefBlock = getBlockFp(fpRef, nYB, nXB);
+
+//                    imsSRBlocks.setProcessor(fpSRBlock, counter);
+//                    imsRefBlocks.setProcessor(fpRefBlock, counter);
+//                    counter++;
+
                     float[] pixelsRefBlock = getBlockPixels(fpRef, nYB, nXB);
 
                     int blockWidthSR = fpSRBlock.getWidth();
                     int blockHeightSR = fpSRBlock.getHeight();
-                    int xStartSR = nXB/blockWidthSR;
-                    int yStartSR = nYB/blockHeightSR;
+                    int xStartSR = nXB*blockWidthSR;
+                    int yStartSR = nYB*blockHeightSR;
                     int nPixelsSRBlock = blockWidthSR*blockHeightSR;
                     int blockWidthRef = blockWidthSR/magnification;
                     int blockHeightRef = blockWidthRef/magnification;
@@ -517,6 +528,9 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                     }
                 }
             }
+
+            //new ImagePlus("SR blocks for image "+(s+1), imsSRBlocks).show();
+            //new ImagePlus("ref blocks for image "+(s+1), imsRefBlocks).show();
 
             //TODO: average RSF
             //TODO: populate stacks
@@ -990,6 +1004,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             for(int i=0; i<blockWidth; i++){
                 int y = yStart+j;
                 int x = xStart+i;
+                log.msg("setting ("+x+", "+y+")");
                 fp.setf(x, y, fpBlock.getf(i,j));
             }
         }
