@@ -425,10 +425,10 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
                     /// run optimizer
                     UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
-                            new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, blockWidthSR)); //limit to block width
+                            new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, blockWidthSR/2)); //limit to block width
                     float sigma_linear = (float) result.getPoint();
-                    log.msg("Best sigma is: "+sigma_linear);
-                    log.msg("Best error is: "+result.getValue());
+                    log.msg("Block ("+nXB+", "+nYB+") - Best sigma is: "+sigma_linear);
+                    log.msg("Block ("+nXB+", "+nYB+") - Best error is: "+result.getValue());
 
                     // GET ALPHA AND BETA
                     FloatProcessor blurredFp = (FloatProcessor) fpSRBlock.duplicate();
@@ -443,7 +443,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                     float alpha = aB[0];
                     float beta = aB[1];
 
-                    log.msg("Alpha is: "+alpha+", beta is: "+beta);
+                    log.msg("Block ("+nXB+", "+nYB+") - alpha is: "+alpha+", beta is: "+beta);
 
                     // check if sigma hit the boundary
 
@@ -491,19 +491,19 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                     }
 
                     /// intensity-scaled and convolved stack
-                    FloatProcessor fpSRIntensityScaledBlurredBlock = (FloatProcessor) fpSRIntensityScaledBlock.duplicate();
-                    fpSRIntensityScaledBlurredBlock.blurGaussian(sigma_linear);
-                    fpSRConvolved = setBlock(fpSRConvolved, fpSRIntensityScaledBlurredBlock, xStartSR, yStartSR,
+                    FloatProcessor fpSRConvolvedBlock = (FloatProcessor) fpSRIntensityScaledBlock.duplicate();
+                    fpSRConvolvedBlock.blurGaussian(sigma_linear);
+                    fpSRConvolved = setBlock(fpSRConvolved, fpSRConvolvedBlock, xStartSR, yStartSR,
                             blockWidthSR, blockHeightSR);
 
                     /// intensity-scaled and convolved boundary condition stack
-                    FloatProcessor fpSRIntensityScaledBlurredBoundaryBlock;// = fpSRIntensityScaledBlurredBlock;
-                    if(!localOverblurFlag) fpSRConvolvedBoundary = setBlock(fpSRConvolvedBoundary, fpSRIntensityScaledBlurredBlock,
+                    FloatProcessor fpSRConvolvedBoundaryBlock;// = fpSRConvolvedBlock;
+                    if(!localOverblurFlag) fpSRConvolvedBoundary = setBlock(fpSRConvolvedBoundary, fpSRConvolvedBlock,
                             xStartSR, yStartSR, blockWidthSR, blockHeightSR);
                     else {
-                        fpSRIntensityScaledBlurredBoundaryBlock = (FloatProcessor) fpSRIntensityScaledBoundaryBlock.duplicate();
-                        fpSRIntensityScaledBlurredBoundaryBlock.blurGaussian(maxSigmaBoundary);
-                        fpSRConvolvedBoundary = setBlock(fpSRConvolvedBoundary, fpSRIntensityScaledBlurredBoundaryBlock,
+                        fpSRConvolvedBoundaryBlock = (FloatProcessor) fpSRIntensityScaledBoundaryBlock.duplicate();
+                        fpSRConvolvedBoundaryBlock.blurGaussian(maxSigmaBoundary);
+                        fpSRConvolvedBoundary = setBlock(fpSRConvolvedBoundary, fpSRConvolvedBoundaryBlock,
                                 xStartSR, yStartSR, blockWidthSR, blockHeightSR);
                     }
 
@@ -633,9 +633,9 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         }
 
         if(!noCrop) new ImagePlus(titleRefImage+" - " +borderString+" " +registrationString, imsRef).show();
-//        if(showIntensityNormalised || !noCrop){
-//            new ImagePlus(titleSRImage +" - " +borderString +registrationString+" - intensity-normalised", imsSRNormalised).show();
-//        }
+        if(showIntensityNormalised || !noCrop){
+            new ImagePlus(titleSRImage +" - " +borderString +registrationString+" - intensity-normalised", imsSRIntensityScaled).show();
+        }
 
         if(showConvolved){
             new ImagePlus(titleSRImage+" - Convolved with RSF", imsSRConvolved).show();
@@ -647,9 +647,9 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         impEMap.show();
 
         if(overblurExists){
-//            if(showIntensityNormalised || !noCrop){
-//                new ImagePlus(titleSRImage +" - " +borderString +registrationString+" - intensity-normalised - Constrained to RSF boundary", imsSRNormalisedBoundary).show();
-//            }
+            if(showIntensityNormalised || !noCrop){
+                new ImagePlus(titleSRImage +" - " +borderString +registrationString+" - intensity-normalised - Constrained to RSF boundary", imsSRIntensityScaledBoundary).show();
+            }
 
             if(showConvolved){
                 new ImagePlus(titleSRImage+" - Convolved with RSF - Constrained to RSF boundary", imsSRConvolvedBoundary).show();
@@ -1004,7 +1004,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             for(int i=0; i<blockWidth; i++){
                 int y = yStart+j;
                 int x = xStart+i;
-                log.msg("setting ("+x+", "+y+")");
                 fp.setf(x, y, fpBlock.getf(i,j));
             }
         }
