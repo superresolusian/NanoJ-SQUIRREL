@@ -324,8 +324,10 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         ImageStack imsSRConvolvedBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsEMap = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsEMapBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsSRNormalised = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsSRNormalisedBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
+        ImageStack imsAlphaMaps = new ImageStack(w_SR, h_SR, nSlicesSR);
+        ImageStack imsBetaMaps = new ImageStack(w_SR, h_SR, nSlicesSR);
+        ImageStack imsSigmaMaps = new ImageStack(w_SR, h_SR, nSlicesSR);
+        ImageStack imsLinearityMaps = new ImageStack(w_SR, h_SR, nSlicesSR);
 
         ResultsTable rt = new ResultsTable();
 
@@ -376,6 +378,10 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             FloatProcessor fpSRIntensityScaledBoundary = new FloatProcessor(w_SR, h_SR);
             FloatProcessor fpSRConvolved = new FloatProcessor(w_SR, h_SR);
             FloatProcessor fpSRConvolvedBoundary = new FloatProcessor(w_SR, h_SR);
+            FloatProcessor fpAlphaMap = new FloatProcessor(w_SR, h_SR);
+            FloatProcessor fpBetaMap = new FloatProcessor(w_SR, h_SR);
+            FloatProcessor fpSigmaMap = new FloatProcessor(w_SR, h_SR);
+            FloatProcessor fpLinearityMap = new FloatProcessor(w_SR, h_SR);
 
             int maxRSFWidth = 0;
             int maxRSFWidthBoundary = 0;
@@ -455,6 +461,25 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                         log.msg("Intensity matching with constrained RSP - Alpha is: "+alphaBoundary+", beta is: "+betaBoundary);
                     }
 
+                    // populate maps
+                    FloatProcessor fpAlpha = new FloatProcessor(blockWidthSR, blockHeightSR);
+                    fpAlpha.add(alphaBoundary);
+                    FloatProcessor fpBeta = new FloatProcessor(blockWidthSR, blockHeightSR);
+                    fpBeta.add(betaBoundary);
+                    FloatProcessor fpSigma = new FloatProcessor(blockWidthSR, blockHeightSR);
+                    FloatProcessor fpLinearity = new FloatProcessor(blockWidthSR, blockHeightSR);
+                    if(!localOverblurFlag) fpSigma.add(sigma_linear);
+                    else{
+                        fpSigma.add(maxSigmaBoundary);
+                        fpLinearity.add(sigma_linear/maxSigmaBoundary);
+                    }
+
+                    fpAlphaMap = setBlock(fpAlphaMap, fpAlpha, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
+                    fpBetaMap = setBlock(fpBetaMap, fpBeta, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
+                    fpSigmaMap = setBlock(fpSigmaMap, fpSigma, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
+                    fpLinearityMap = setBlock(fpLinearityMap, fpLinearity, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
+
+
                     // put everything into output images
 
                     /// intensity-scaled
@@ -525,6 +550,10 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             imsSRIntensityScaledBoundary.setProcessor(fpSRIntensityScaledBoundary, s+1);
             imsSRConvolved.setProcessor(fpSRConvolved, s+1);
             imsSRConvolvedBoundary.setProcessor(fpSRConvolvedBoundary, s+1);
+            imsAlphaMaps.setProcessor(fpAlphaMap, s+1);
+            imsBetaMaps.setProcessor(fpBetaMap, s+1);
+            imsSigmaMaps.setProcessor(fpSigmaMap, s+1);
+            imsLinearityMaps.setProcessor(fpLinearityMap, s+1);
 
             // CALCULATE METRICS AND MAP
             log.status("Calculating similarity...");
@@ -659,6 +688,11 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         }
 
         rt.show("RSP and RSE values");
+
+        new ImagePlus("Alpha maps", imsAlphaMaps).show();
+        new ImagePlus("Beta maps", imsBetaMaps).show();
+        new ImagePlus("Sigma maps", imsSigmaMaps).show();
+        new ImagePlus("Linearity maps", imsLinearityMaps).show();
 
         IJ.run("Tile");
 
