@@ -66,7 +66,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
     boolean noCrop = true;
     private boolean borderCrop = false;
     private boolean registrationCrop = false;
-    private int maxMag, blocksPerAxis, blocksPerXAxis, blocksPerYAxis;
+    private int maxMag, blocksPerXAxis, blocksPerYAxis;
 
     DecimalFormat df = new DecimalFormat("00.00");
 
@@ -132,8 +132,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         gd.addNumericField("Max. Mag. in Optimization (default: 5)", getPrefs("maxMag", 5), 0);
         gd.addMessage("The higher the maximum magnification, the more precise (marginally) but slower the algorithm will be...", new Font("Arial", Font.ITALIC, 12));
 
-        gd.addNumericField("Blocks per axis (default: 10)", getPrefs("blocksPerAxis", 10), 0);
-
         gd.addCheckbox("Show_Advanced_Settings", false);
     }
 
@@ -143,7 +141,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         titleSRImage = gd.getNextChoice();
         titleRSFImage = gd.getNextChoice();
         maxMag = (int) gd.getNextNumber();
-        blocksPerAxis = (int) gd.getNextNumber();
 
         showAdvancedSettings = gd.getNextBoolean();
         if (!_showAdvancedSettings && showAdvancedSettings && _errorMap_ExtraSettings == null) {
@@ -162,7 +159,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         setPrefs("titleSRImage", titleSRImage);
         setPrefs("titleRSFImage", titleRSFImage);
         setPrefs("maxMag", maxMag);
-        setPrefs("blocksPerAxis", blocksPerAxis);
         if (maxMag < 1) return false;
 
         prefs.savePreferences();
@@ -319,15 +315,11 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
         // output stacks
         ImageStack imsSRIntensityScaled = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsSRIntensityScaledBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsSRConvolved = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsSRConvolvedBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsEMap = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsEMapBoundary = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsAlphaMaps = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsBetaMaps = new ImageStack(w_SR, h_SR, nSlicesSR);
         ImageStack imsSigmaMaps = new ImageStack(w_SR, h_SR, nSlicesSR);
-        ImageStack imsLinearityMaps = new ImageStack(w_SR, h_SR, nSlicesSR);
 
         ResultsTable rt = new ResultsTable();
 
@@ -359,8 +351,9 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
 
         // blocking
-        blocksPerXAxis = blocksPerAxis;
-        blocksPerYAxis = (int) (blocksPerXAxis * (((double) h_Ref)/w_Ref));
+        float blockSize = 10*maxSigmaBoundary;
+        blocksPerXAxis = (int) floor(w_SR/blockSize);
+        blocksPerYAxis = (int) floor(h_SR/blockSize);
         int nBlocks = blocksPerXAxis*blocksPerYAxis;
 
         long loopStart = System.nanoTime();
@@ -373,15 +366,11 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             log.msg("-----------------------------------");
 
             FloatProcessor fpSR = imsSR.getProcessor(s+1).convertToFloatProcessor();
+            float[] pixelsSR = (float[]) fpSR.getPixels();
 
-            FloatProcessor fpSRIntensityScaled = new FloatProcessor(w_SR, h_SR);
-            FloatProcessor fpSRIntensityScaledBoundary = new FloatProcessor(w_SR, h_SR);
-            FloatProcessor fpSRConvolved = new FloatProcessor(w_SR, h_SR);
-            FloatProcessor fpSRConvolvedBoundary = new FloatProcessor(w_SR, h_SR);
             FloatProcessor fpAlphaMap = new FloatProcessor(w_SR, h_SR);
             FloatProcessor fpBetaMap = new FloatProcessor(w_SR, h_SR);
             FloatProcessor fpSigmaMap = new FloatProcessor(w_SR, h_SR);
-            FloatProcessor fpLinearityMap = new FloatProcessor(w_SR, h_SR);
 
             int maxRSFWidth = 0;
             int maxRSFWidthBoundary = 0;
@@ -419,8 +408,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                     UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
                             new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, blockWidthSR/2)); //limit to block width
                     float sigma_linear = (float) result.getPoint();
-                    log.msg("Block ("+nXB+", "+nYB+") - Best sigma is: "+sigma_linear);
-                    log.msg("Block ("+nXB+", "+nYB+") - Best error is: "+result.getValue());
 
                     // GET ALPHA AND BETA
                     FloatProcessor blurredFp = (FloatProcessor) fpSRBlock.duplicate();
@@ -434,8 +421,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                     float[] aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRefBlock, (float[]) blurredOnes.getPixels());
                     float alpha = aB[0];
                     float beta = aB[1];
-
-                    log.msg("Block ("+nXB+", "+nYB+") - alpha is: "+alpha+", beta is: "+beta);
 
                     // check if sigma hit the boundary
 
@@ -457,8 +442,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                         aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRefBlock, (float[]) blurredOnes.getPixels());
                         alphaBoundary = aB[0];
                         betaBoundary = aB[1];
-
-                        log.msg("Intensity matching with constrained RSP - Alpha is: "+alphaBoundary+", beta is: "+betaBoundary);
                     }
 
                     // populate maps
@@ -467,93 +450,57 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                     FloatProcessor fpBeta = new FloatProcessor(blockWidthSR, blockHeightSR);
                     fpBeta.add(betaBoundary);
                     FloatProcessor fpSigma = new FloatProcessor(blockWidthSR, blockHeightSR);
-                    FloatProcessor fpLinearity = new FloatProcessor(blockWidthSR, blockHeightSR);
                     if(!localOverblurFlag) fpSigma.add(sigma_linear);
                     else{
                         fpSigma.add(maxSigmaBoundary);
-                        fpLinearity.add(sigma_linear/maxSigmaBoundary);
                     }
 
                     fpAlphaMap = setBlock(fpAlphaMap, fpAlpha, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
                     fpBetaMap = setBlock(fpBetaMap, fpBeta, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
                     fpSigmaMap = setBlock(fpSigmaMap, fpSigma, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-                    fpLinearityMap = setBlock(fpLinearityMap, fpLinearity, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-
-
-                    // put everything into output images
-
-                    /// intensity-scaled
-                    FloatProcessor fpSRIntensityScaledBlock = (FloatProcessor) fpSRBlock.duplicate();
-                    fpSRIntensityScaledBlock.multiply(alpha);
-                    fpSRIntensityScaledBlock.add(beta);
-                    fpSRIntensityScaled = setBlock(fpSRIntensityScaled, fpSRIntensityScaledBlock, xStartSR, yStartSR,
-                            blockWidthSR, blockHeightSR);
-
-                    /// intensity-scaled boundary condition stack
-                    FloatProcessor fpSRIntensityScaledBoundaryBlock = fpSRIntensityScaledBlock.duplicate().convertToFloatProcessor();
-                    if(!localOverblurFlag) fpSRIntensityScaledBoundary = setBlock(fpSRIntensityScaledBoundary,
-                            fpSRIntensityScaledBlock, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-                    else {
-                        fpSRIntensityScaledBoundaryBlock = (FloatProcessor) fpSRBlock.duplicate();
-                        fpSRIntensityScaledBoundaryBlock.multiply(alphaBoundary);
-                        fpSRIntensityScaledBoundaryBlock.add(betaBoundary);
-                        fpSRIntensityScaledBoundary = setBlock(fpSRIntensityScaledBoundary,
-                                fpSRIntensityScaledBoundaryBlock, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-                    }
-
-                    /// intensity-scaled and convolved stack
-                    FloatProcessor fpSRConvolvedBlock = (FloatProcessor) fpSRIntensityScaledBlock.duplicate();
-                    fpSRConvolvedBlock.blurGaussian(sigma_linear);
-                    fpSRConvolved = setBlock(fpSRConvolved, fpSRConvolvedBlock, xStartSR, yStartSR,
-                            blockWidthSR, blockHeightSR);
-
-                    /// intensity-scaled and convolved boundary condition stack
-                    FloatProcessor fpSRConvolvedBoundaryBlock;// = fpSRConvolvedBlock;
-                    if(!localOverblurFlag) fpSRConvolvedBoundary = setBlock(fpSRConvolvedBoundary, fpSRConvolvedBlock,
-                            xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-                    else {
-                        fpSRConvolvedBoundaryBlock = (FloatProcessor) fpSRIntensityScaledBoundaryBlock.duplicate();
-                        fpSRConvolvedBoundaryBlock.blurGaussian(maxSigmaBoundary);
-                        fpSRConvolvedBoundary = setBlock(fpSRConvolvedBoundary, fpSRConvolvedBoundaryBlock,
-                                xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-                    }
-
-                    int blockInd = nXB + nYB*blocksPerXAxis;
 
                     /// Generate RSF for this image
-                    log.status("Generating RSF");
-                    FloatProcessor fpRSF = getRSF(sigma_linear/magnification);
-                    fpRSFArray[blockInd] = fpRSF;
-                    maxRSFWidth = max(maxRSFWidth, fpRSF.getWidth());
+                    // TODO: this
 
-                    /// Generate boundary RSF for this image
-                    if(!localOverblurFlag){
-                        fpRSFArrayBoundary[blockInd] = fpRSF;
-                        maxRSFWidthBoundary = max(maxRSFWidth, fpRSF.getWidth());
-                    }
-                    else {
-                        log.status("Generating constrained RSF");
-                        FloatProcessor fpRSFBoundary = getRSF(maxSigmaBoundary / magnification);
-                        fpRSFArrayBoundary[blockInd] = fpRSFBoundary;
-                        maxRSFWidthBoundary = max(maxRSFWidthBoundary, fpRSFBoundary.getWidth());
-                    }
                 }
             }
 
-            //new ImagePlus("SR blocks for image "+(s+1), imsSRBlocks).show();
-            //new ImagePlus("ref blocks for image "+(s+1), imsRefBlocks).show();
+            fpAlphaMap.blurGaussian(blockSize/2);
+            fpBetaMap.blurGaussian(blockSize/2);
 
-            //TODO: average RSF
-            //TODO: populate stacks
+            float[] pixelsAlphaMap = (float[]) fpAlphaMap.getPixels();
+            float[] pixelsBetaMap = (float[]) fpBetaMap.getPixels();
+            float[] pixelsSRIntensityScaled = new float[nPixelsSR];
 
+            for(int i=0; i<nPixelsSR; i++){
+                pixelsSRIntensityScaled[i] = pixelsSR[i]*pixelsAlphaMap[i]+pixelsBetaMap[i];
+            }
+            FloatProcessor fpSRIntensityScaled = new FloatProcessor(w_SR, h_SR, pixelsSRIntensityScaled);
             imsSRIntensityScaled.setProcessor(fpSRIntensityScaled, s+1);
-            imsSRIntensityScaledBoundary.setProcessor(fpSRIntensityScaledBoundary, s+1);
+
+            FloatProcessor fpSRConvolved = new FloatProcessor(w_SR, h_SR);
+            // go back through blocks and convolve with local sigma
+            for(int nYB=0; nYB<blocksPerYAxis; nYB++){
+                for(int nXB=0; nXB<blocksPerXAxis; nXB++){
+                    int blockWidth = w_SR/blocksPerXAxis;
+                    int blockHeight = h_SR/blocksPerYAxis;
+
+                    int xStartSR = nXB*blockWidth;
+                    int yStartSR = nYB*blockHeight;
+
+                    FloatProcessor fp = fpSRIntensityScaled.duplicate().convertToFloatProcessor();
+                    float thisSigma = fpSigmaMap.getf(xStartSR, yStartSR);
+                    fp.blurGaussian(thisSigma);
+
+                    fp = getBlockFp(fp, nYB, nXB);
+
+                    fpSRConvolved = setBlock(fpSRConvolved, fp, xStartSR, yStartSR, fp.getWidth(), fp.getHeight());
+                }
+            }
             imsSRConvolved.setProcessor(fpSRConvolved, s+1);
-            imsSRConvolvedBoundary.setProcessor(fpSRConvolvedBoundary, s+1);
             imsAlphaMaps.setProcessor(fpAlphaMap, s+1);
             imsBetaMaps.setProcessor(fpBetaMap, s+1);
             imsSigmaMaps.setProcessor(fpSigmaMap, s+1);
-            imsLinearityMaps.setProcessor(fpLinearityMap, s+1);
 
             // CALCULATE METRICS AND MAP
             log.status("Calculating similarity...");
@@ -581,30 +528,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
             // CALCULATE METRICS AND MAP FOR BOUNDARY PROBLEM CASES
             double globalRMSEBoundary = globalRMSE, globalPPMCCBoundary = globalPPMCC;
-
-            if(!globalOverblurFlag){
-                imsEMapBoundary.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsEMap), s+1);
-            }
-            else{
-                /// metrics
-                fpSRConvolved_RefSize = (FloatProcessor) fpSRConvolvedBoundary.resize(w_Ref, h_Ref);
-                pixelsSRConvolved_RefSize = (float[]) fpSRConvolved_RefSize.getPixels();
-                globalRMSEBoundary = sqrt(calculateMSE(pixelsSRConvolved_RefSize, pixelsRef));
-                globalPPMCCBoundary = calculatePPMCC(pixelsSRConvolved_RefSize, pixelsRef, true);
-
-                /// error map
-                float[] pixelsEMapBoundary = new float[nPixelsSR];
-                float[] pixelsSRCBoundary = (float[]) fpSRConvolvedBoundary.getPixels();
-
-                for(int p=0; p<nPixelsSR; p++){
-                    float vRef = pixelsRefScaledToSR[p];
-                    float vSRC = pixelsSRCBoundary[p];
-
-                    if(showPositiveNegative) pixelsEMapBoundary[p] = (vRef - vSRC);
-                    else pixelsEMapBoundary[p] = abs(vRef-vSRC);
-                }
-                imsEMapBoundary.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsEMapBoundary), s+1);
-            }
 
             /// put error values into table
             rt.incrementCounter();
@@ -661,43 +584,16 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         applyLUT_SQUIRREL_Errors(impEMap);
         impEMap.show();
 
-        if(overblurExists){
-            if(showIntensityNormalised || !noCrop){
-                new ImagePlus(titleSRImage +" - " +borderString +registrationString+" - intensity-normalised - Constrained to RSF boundary", imsSRIntensityScaledBoundary).show();
-            }
 
-            if(showConvolved){
-                new ImagePlus(titleSRImage+" - Convolved with RSF - Constrained to RSF boundary", imsSRConvolvedBoundary).show();
-            }
-//            if(showRSF){
-//                ImageStack imsRSF_rescaledBoundary = new ImageStack(maxRSFWidthBoundary, maxRSFWidthBoundary, nSlicesSR);
-//                centreLargest = maxRSFWidthBoundary/2;
-//
-//                for(int n=1; n<=nSlicesSR; n++){
-//                    FloatProcessor fp = fpRSFArrayBoundary[n-1];
-//                    int centre = fp.getWidth()/2;
-//                    FloatProcessor fpInsert = new FloatProcessor(maxRSFWidthBoundary, maxRSFWidthBoundary);
-//                    fpInsert.insert(fp, centreLargest-centre, centreLargest-centre);
-//                    imsRSF_rescaledBoundary.setProcessor(fpInsert, n);
-//                }
-//                new ImagePlus("Optimised RSF stack", imsRSF_rescaledBoundary).show();
-//            }
-            ImagePlus impEMapBoundary = new ImagePlus(titleSRImage+" - Resolution Scaled Error-Map - Constrained to RSF boundary", imsEMapBoundary);
-            applyLUT_SQUIRREL_Errors(impEMapBoundary);
-            impEMapBoundary.show();
-        }
+        //new ImagePlus("Alpha maps", imsAlphaMaps).show();
+        //new ImagePlus("Beta maps", imsBetaMaps).show();
+        //new ImagePlus("Sigma maps", imsSigmaMaps).show();
 
         rt.show("RSP and RSE values");
-
-        new ImagePlus("Alpha maps", imsAlphaMaps).show();
-        new ImagePlus("Beta maps", imsBetaMaps).show();
-        new ImagePlus("Sigma maps", imsSigmaMaps).show();
-        new ImagePlus("Linearity maps", imsLinearityMaps).show();
 
         IJ.run("Tile");
 
         log.msg("SQUIRREL analysis took "+(System.currentTimeMillis()-startTime)/1000+"s");
-
 
     }
 
