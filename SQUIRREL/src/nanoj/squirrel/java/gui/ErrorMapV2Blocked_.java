@@ -9,6 +9,7 @@ import ij.measure.ResultsTable;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import nanoj.core.java.gui._BaseDialog_;
+import nanoj.kernels.Kernel_VoronoiImage;
 import nanoj.squirrel.java.gui.tools.SetMaximumStackSize_;
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.optim.MaxEval;
@@ -67,6 +68,8 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
     private boolean borderCrop = false;
     private boolean registrationCrop = false;
     private int maxMag, blocksPerXAxis, blocksPerYAxis;
+
+    private final static Kernel_VoronoiImage VI = new Kernel_VoronoiImage();
 
     DecimalFormat df = new DecimalFormat("00.00");
 
@@ -357,7 +360,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         int nBlocks = blocksPerXAxis*blocksPerYAxis;
 
         long loopStart = System.nanoTime();
-        boolean overblurExists = false;
 
         for(int s=0; s<nSlicesSR; s++) {
 
@@ -368,16 +370,12 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             FloatProcessor fpSR = imsSR.getProcessor(s+1).convertToFloatProcessor();
             float[] pixelsSR = (float[]) fpSR.getPixels();
 
-            FloatProcessor fpAlphaMap = new FloatProcessor(w_SR, h_SR);
-            FloatProcessor fpBetaMap = new FloatProcessor(w_SR, h_SR);
-            FloatProcessor fpSigmaMap = new FloatProcessor(w_SR, h_SR);
-
-            int maxRSFWidth = 0;
-            int maxRSFWidthBoundary = 0;
-            FloatProcessor[] fpRSFArray = new FloatProcessor[blocksPerXAxis*blocksPerYAxis];
-            FloatProcessor[] fpRSFArrayBoundary = new FloatProcessor[blocksPerXAxis*blocksPerYAxis];
-
-            boolean globalOverblurFlag = false;
+            // create arraylists for parameter maps
+            ArrayList<Float> xPositionsList = new ArrayList<Float>();
+            ArrayList<Float> yPositionsList = new ArrayList<Float>();
+            ArrayList<Float> alphaList = new ArrayList<Float>();
+            ArrayList<Float> betaList = new ArrayList<Float>();
+            ArrayList<Float> sigmaList = new ArrayList<Float>();
 
 
             for (int nYB = 0; nYB < blocksPerYAxis; nYB++) {
@@ -424,11 +422,10 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
                     // check if sigma hit the boundary
 
-                    float alphaBoundary = alpha, betaBoundary = beta;
+                    float alphaBoundary = alpha, betaBoundary = beta, sigmaBoundary = sigma_linear;
                     if(sigma_linear>maxSigmaBoundary){
+                        sigmaBoundary = maxSigmaBoundary;
                         localOverblurFlag = true;
-                        globalOverblurFlag = true;
-                        overblurExists = true;
                         log.msg(OVERBLUR_MESSAGE);
                         // calculate alpha and beta with maxSigmaBoundary as blur
                         blurredFp = (FloatProcessor) fpSRBlock.duplicate();
@@ -444,29 +441,31 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                         betaBoundary = aB[1];
                     }
 
-                    // populate maps
-                    FloatProcessor fpAlpha = new FloatProcessor(blockWidthSR, blockHeightSR);
-                    fpAlpha.add(alphaBoundary);
-                    FloatProcessor fpBeta = new FloatProcessor(blockWidthSR, blockHeightSR);
-                    fpBeta.add(betaBoundary);
-                    FloatProcessor fpSigma = new FloatProcessor(blockWidthSR, blockHeightSR);
-                    if(!localOverblurFlag) fpSigma.add(sigma_linear);
-                    else{
-                        fpSigma.add(maxSigmaBoundary);
-                    }
+                    if(alphaBoundary<0) continue;
 
-                    fpAlphaMap = setBlock(fpAlphaMap, fpAlpha, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-                    fpBetaMap = setBlock(fpBetaMap, fpBeta, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-                    fpSigmaMap = setBlock(fpSigmaMap, fpSigma, xStartSR, yStartSR, blockWidthSR, blockHeightSR);
-
-                    /// Generate RSF for this image
-                    // TODO: this
+                    xPositionsList.add((float) (xStartSR + blockWidthSR/2));
+                    yPositionsList.add((float) (yStartSR + blockHeightSR/2));
+                    alphaList.add(alphaBoundary);
+                    betaList.add(betaBoundary);
+                    sigmaList.add(sigmaBoundary);
 
                 }
             }
 
+            // convert arraylists into float arrays and create voronoi maps
+            float[] xPositions = arrayListToFloatArray(xPositionsList);
+            float[] yPositions = arrayListToFloatArray(yPositionsList);
+            float[] alphas = arrayListToFloatArray(alphaList);
+            float[] betas = arrayListToFloatArray(betaList);
+            float[] sigmas = arrayListToFloatArray(sigmaList);
+
+            FloatProcessor fpAlphaMap = VI.calculateImage(w_SR, h_SR, xPositions, yPositions, alphas);
+            FloatProcessor fpBetaMap = VI.calculateImage(w_SR, h_SR, xPositions, yPositions, betas);
+            FloatProcessor fpSigmaMap = VI.calculateImage(w_SR, h_SR, xPositions, yPositions, sigmas);
+
             fpAlphaMap.blurGaussian(blockSize/2);
             fpBetaMap.blurGaussian(blockSize/2);
+            fpSigmaMap.blurGaussian(blockSize/2);
 
             float[] pixelsAlphaMap = (float[]) fpAlphaMap.getPixels();
             float[] pixelsBetaMap = (float[]) fpBetaMap.getPixels();
@@ -487,9 +486,11 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
                     int xStartSR = nXB*blockWidth;
                     int yStartSR = nYB*blockHeight;
+                    int xCentreSR = xStartSR+blockWidth/2;
+                    int yCentreSR = yStartSR+blockHeight/2;
 
                     FloatProcessor fp = fpSRIntensityScaled.duplicate().convertToFloatProcessor();
-                    float thisSigma = fpSigmaMap.getf(xStartSR, yStartSR);
+                    float thisSigma = fpSigmaMap.getf(xCentreSR, yCentreSR);
                     fp.blurGaussian(thisSigma);
 
                     fp = getBlockFp(fp, nYB, nXB);
@@ -534,15 +535,15 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             rt.addValue("Frame", s+1);
             rt.addValue("RSP (Resolution Scaled Pearson-Correlation)", globalPPMCC);
             rt.addValue("RSE (Resolution Scaled Error)", globalRMSE);
-            rt.addValue("Overblur warning", String.valueOf(globalOverblurFlag));
-            if(!globalOverblurFlag){
-                rt.addValue("RSP - constrained", "N/A");
-                rt.addValue("RSE - constrained", "N/A");
-            }
-            else{
-                rt.addValue("RSP - constrained", globalPPMCCBoundary);
-                rt.addValue("RSE - constrained", globalRMSEBoundary);
-            }
+//            rt.addValue("Overblur warning", String.valueOf(globalOverblurFlag));
+//            if(!globalOverblurFlag){
+//                rt.addValue("RSP - constrained", "N/A");
+//                rt.addValue("RSE - constrained", "N/A");
+//            }
+//            else{
+//                rt.addValue("RSP - constrained", globalPPMCCBoundary);
+//                rt.addValue("RSE - constrained", globalRMSEBoundary);
+//            }
 
             if(nSlicesSR>1) {
                 double frameTime = ((System.nanoTime() - loopStart) / (s+1)) / 1e9;
@@ -585,9 +586,9 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         impEMap.show();
 
 
-        //new ImagePlus("Alpha maps", imsAlphaMaps).show();
-        //new ImagePlus("Beta maps", imsBetaMaps).show();
-        //new ImagePlus("Sigma maps", imsSigmaMaps).show();
+        new ImagePlus("Alpha maps", imsAlphaMaps).show();
+        new ImagePlus("Beta maps", imsBetaMaps).show();
+        new ImagePlus("Sigma maps", imsSigmaMaps).show();
 
         rt.show("RSP and RSE values");
 
@@ -971,5 +972,13 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         }
         fpRSF.multiply(1./vKernelSum);
         return fpRSF;
+    }
+
+    private float[] arrayListToFloatArray(ArrayList<Float> arrayList){
+        int nElements = arrayList.size();
+        float[] array = new float[nElements];
+
+        for(int n=0; n<nElements; n++) array[n] = arrayList.get(n);
+        return array;
     }
 }
