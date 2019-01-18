@@ -175,7 +175,7 @@ public class RollingBlockTest_ extends _BaseDialog_ {
 
                 for(int i=0; i<blockSize; i++){
                     int x_ = (i+x)-offset;
-                    if(x_<0 || x_>(w_SR+1)) continue;
+                    if(x_<0 || x_>(w_SR-1)) continue;
 
                     int k = j*blockSize + i;
 
