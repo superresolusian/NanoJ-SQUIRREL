@@ -41,6 +41,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
     String titleRefImage = "", titleRSFImage = "", titleSRImage = "", noRSFString = "-- RSF unknown, estimate via optimisation --";
     boolean showAdvancedSettings, _showAdvancedSettings = false;
+    boolean doSlidingWindow;
 
     protected ErrorMap_ExtraSettings_ errorMap_ExtraSettings = new ErrorMap_ExtraSettings_();
     protected ErrorMap_ExtraSettings_ _errorMap_ExtraSettings;
@@ -136,6 +137,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         gd.addMessage("The higher the maximum magnification, the more precise (marginally) but slower the algorithm will be...", new Font("Arial", Font.ITALIC, 12));
 
         gd.addCheckbox("Show_Advanced_Settings", false);
+        gd.addCheckbox("Do sliding window", getPrefs("doSlidingWindow", false));
     }
 
     @Override
@@ -158,10 +160,13 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         if (showAdvancedSettings) _showAdvancedSettings = true;
         else _showAdvancedSettings = false;
 
+        doSlidingWindow = gd.getNextBoolean();
+
         setPrefs("titleRefImage", titleRefImage);
         setPrefs("titleSRImage", titleSRImage);
         setPrefs("titleRSFImage", titleRSFImage);
         setPrefs("maxMag", maxMag);
+        setPrefs("doSlidingWindow", doSlidingWindow);
         if (maxMag < 1) return false;
 
         prefs.savePreferences();
@@ -377,9 +382,11 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             ArrayList<Float> betaList = new ArrayList<Float>();
             ArrayList<Float> sigmaList = new ArrayList<Float>();
 
+            double inc = 1;
+            if(doSlidingWindow) inc = 0.5;
 
-            for (int nYB = 0; nYB < blocksPerYAxis; nYB++) {
-                for (int nXB = 0; nXB < blocksPerXAxis; nXB++) {
+            for (double nYB = 0; nYB < blocksPerYAxis; nYB+=inc) {
+                for (double nXB = 0; nXB < blocksPerXAxis; nXB+=inc) {
 
                     boolean localOverblurFlag = false;
                     FloatProcessor fpSRBlock = getBlockFp(fpSR, nYB, nXB);
@@ -387,11 +394,13 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
                     int blockWidthSR = fpSRBlock.getWidth();
                     int blockHeightSR = fpSRBlock.getHeight();
-                    int xStartSR = nXB*blockWidthSR;
-                    int yStartSR = nYB*blockHeightSR;
+                    int xStartSR = (int) nXB*blockWidthSR;
+                    int yStartSR = (int) nYB*blockHeightSR;
                     int nPixelsSRBlock = blockWidthSR*blockHeightSR;
                     int blockWidthRef = blockWidthSR/magnification;
                     int blockHeightRef = blockHeightSR/magnification;
+
+                    if(nPixelsSRBlock!=(pixelsRefBlock.length*magnification2)) continue;
 
                     float[] ones = new float[nPixelsSRBlock];
                     for(int i=0; i<nPixelsSRBlock; i++){ones[i] = 1;}
@@ -772,15 +781,15 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                 w_SR - abs(roundedMaxShiftX*magnification), h_SR - abs(roundedMaxShiftY*magnification), nSlicesSR);
     }
 
-    float[] getBlockPixels(FloatProcessor fp, int nYB, int nXB){
+    float[] getBlockPixels(FloatProcessor fp, double nYB, double nXB){
         int w = fp.getWidth();
         int h = fp.getHeight();
 
         int blockWidth = w/blocksPerXAxis;
         int blockHeight = h/blocksPerYAxis;
 
-        int xStart = nXB*blockWidth;
-        int yStart = nYB*blockHeight;
+        int xStart = (int) (nXB*blockWidth);
+        int yStart = (int) (nYB*blockHeight);
 
         blockWidth = Math.min(blockWidth, w-xStart);
         blockHeight = Math.min(blockHeight, h-yStart);
@@ -795,15 +804,15 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
     }
 
-    FloatProcessor getBlockFp(FloatProcessor fp, int nYB, int nXB){
+    FloatProcessor getBlockFp(FloatProcessor fp, double nYB, double nXB){
         int w = fp.getWidth();
         int h = fp.getHeight();
 
         int blockWidth = w/blocksPerXAxis;
         int blockHeight = h/blocksPerYAxis;
 
-        int xStart = nXB*blockWidth;
-        int yStart = nYB*blockHeight;
+        int xStart = (int) (nXB*blockWidth);
+        int yStart = (int) (nYB*blockHeight);
 
         blockWidth = Math.min(blockWidth, w-xStart);
         blockHeight = Math.min(blockHeight, h-yStart);
