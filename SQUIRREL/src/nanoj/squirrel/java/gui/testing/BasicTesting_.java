@@ -142,6 +142,11 @@ public class BasicTesting_ extends _BaseDialog_ {
             w_Ref = fpRef.getWidth();
             h_Ref = fpRef.getHeight();
 
+            if(n==0){
+                new ImagePlus("Reference image - alpha="+trueAlpha+", beta="+trueBeta+", sigma="+trueSigma,
+                        fpRef.duplicate()).show();
+            }
+
             if(addNoise) {
                 float[] pixels = (float[]) fpRef.getPixels();
                 float mean = getMean(pixels);
@@ -151,6 +156,11 @@ public class BasicTesting_ extends _BaseDialog_ {
                         pixels[j] = (float) max(0, pixels[j]+random.nextGaussian()*noiseVar);
                     }
                     fpRef.setPixels(pixels);
+
+                    if(n==0){
+                        new ImagePlus("Reference image - alpha="+trueAlpha+", beta="+trueBeta+", sigma="+trueSigma+" noise = "+noiseFractions[i],
+                                fpRef.duplicate()).show();
+                    }
 
                     //prepare arrays for optimisation
 
