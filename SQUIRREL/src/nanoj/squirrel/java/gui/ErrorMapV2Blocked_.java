@@ -359,10 +359,17 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
 
         // blocking
-        float blockSize = 10*maxSigmaBoundary;
+        int blockSize = (int) (10*maxSigmaBoundary);
+        while(blockSize%magnification!=0) blockSize++;
+        log.msg("Block size is "+blockSize);
+
         blocksPerXAxis = (int) floor(w_SR/blockSize);
         blocksPerYAxis = (int) floor(h_SR/blockSize);
-        int nBlocks = blocksPerXAxis*blocksPerYAxis;
+
+        double inc = 1;
+        if(doSlidingWindow) inc = 0.5;
+        double totalBlocks = (blocksPerYAxis/inc)*(blocksPerXAxis*inc);
+
 
         long loopStart = System.nanoTime();
 
@@ -382,11 +389,12 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             ArrayList<Float> betaList = new ArrayList<Float>();
             ArrayList<Float> sigmaList = new ArrayList<Float>();
 
-            double inc = 1;
-            if(doSlidingWindow) inc = 0.5;
 
             for (double nYB = 0; nYB < blocksPerYAxis; nYB+=inc) {
                 for (double nXB = 0; nXB < blocksPerXAxis; nXB+=inc) {
+
+                    double thisBlock = nYB*blocksPerXAxis + nXB;
+                    log.progress(thisBlock/totalBlocks);
 
                     boolean localOverblurFlag = false;
                     FloatProcessor fpSRBlock = getBlockFp(fpSR, nYB, nXB);
@@ -435,7 +443,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                     if(sigma_linear>maxSigmaBoundary){
                         sigmaBoundary = maxSigmaBoundary;
                         localOverblurFlag = true;
-                        log.msg(OVERBLUR_MESSAGE);
+                        //log.msg(OVERBLUR_MESSAGE);
                         // calculate alpha and beta with maxSigmaBoundary as blur
                         blurredFp = (FloatProcessor) fpSRBlock.duplicate();
                         blurredOnes = new FloatProcessor(blockWidthSR, blockHeightSR, ones);
@@ -862,7 +870,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             FloatProcessor finalFpSRResized = (FloatProcessor) finalFpSR.resize(blockWidthRef, blockHeightRef);
 
             double error = calculateRMSE(pixelsRefBlock, (float[]) finalFpSRResized.getPixels());
-            log.status("Optimising... sigma="+df.format(sigma)+", alpha="+df.format(aB[0])+", beta="+df.format(aB[1])+". Error="+df.format(error));
+            //log.status("Optimising... sigma="+df.format(sigma)+", alpha="+df.format(aB[0])+", beta="+df.format(aB[1])+". Error="+df.format(error));
             sigmaList.add((float) sigma);
             errorList.add((float) error);
             return error;
