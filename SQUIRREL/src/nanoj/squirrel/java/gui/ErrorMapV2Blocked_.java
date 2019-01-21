@@ -42,7 +42,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
     String titleRefImage = "", titleRSFImage = "", titleSRImage = "", noRSFString = "-- RSF unknown, estimate via optimisation --";
     boolean showAdvancedSettings, _showAdvancedSettings = false;
-    boolean doSlidingWindow;
 
     protected ErrorMap_ExtraSettings_ errorMap_ExtraSettings = new ErrorMap_ExtraSettings_();
     protected ErrorMap_ExtraSettings_ _errorMap_ExtraSettings;
@@ -138,7 +137,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         gd.addMessage("The higher the maximum magnification, the more precise (marginally) but slower the algorithm will be...", new Font("Arial", Font.ITALIC, 12));
 
         gd.addCheckbox("Show_Advanced_Settings", false);
-        gd.addCheckbox("Do sliding window", getPrefs("doSlidingWindow", false));
     }
 
     @Override
@@ -161,13 +159,10 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         if (showAdvancedSettings) _showAdvancedSettings = true;
         else _showAdvancedSettings = false;
 
-        doSlidingWindow = gd.getNextBoolean();
-
         setPrefs("titleRefImage", titleRefImage);
         setPrefs("titleSRImage", titleSRImage);
         setPrefs("titleRSFImage", titleRSFImage);
         setPrefs("maxMag", maxMag);
-        setPrefs("doSlidingWindow", doSlidingWindow);
         if (maxMag < 1) return false;
 
         prefs.savePreferences();
@@ -360,29 +355,34 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
 
         // blocking
-        int blockSize = (int) (10*maxSigmaBoundary);
-        while(blockSize%magnification!=0) blockSize++;
-        log.msg("Block size is "+blockSize);
+        int blockSize = (int) (10*maxSigmaBoundary)-1;
+        blocksPerXAxis = (int) floor(w_SR / blockSize);
+        blocksPerYAxis = (int) floor(h_SR / blockSize);
 
-        blocksPerXAxis = (int) floor(w_SR/blockSize);
-        blocksPerYAxis = (int) floor(h_SR/blockSize);
+        int nominalBlockSize = (int) floor(w_SR / blocksPerXAxis);
 
-        //double inc = 1;
-        //if(doSlidingWindow) inc = 0.5;
-        //double totalBlocks = (blocksPerYAxis*inc)*(blocksPerXAxis*inc);
+        while(nominalBlockSize%magnification!=0) {
+            log.msg("block size is "+blockSize);
+            blockSize++;
+
+            blocksPerXAxis = (int) floor(w_SR / blockSize);
+            blocksPerYAxis = (int) floor(h_SR / blockSize);
+
+            nominalBlockSize = (int) floor(w_SR / blocksPerXAxis);
+        }
+        log.msg("final block size is "+blockSize);
+
         int totalBlocks = blocksPerYAxis*blocksPerXAxis;
-
-        log.msg("blocks y="+blocksPerYAxis+", blocks x="+blocksPerXAxis+", totalblocks="+totalBlocks);
 
         long loopStart = System.nanoTime();
 
         for(int s=0; s<nSlicesSR; s++) {
 
             log.msg("-----------------------------------");
-            log.msg("Processing super-resolution frame "+(s+1));
+            log.msg("Processing super-resolution frame " + (s + 1));
             log.msg("-----------------------------------");
 
-            FloatProcessor fpSR = imsSR.getProcessor(s+1).convertToFloatProcessor();
+            FloatProcessor fpSR = imsSR.getProcessor(s + 1).convertToFloatProcessor();
             float[] pixelsSR = (float[]) fpSR.getPixels();
 
             // create arraylists for parameter maps
@@ -397,9 +397,9 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             for (int nYB = 0; nYB < blocksPerYAxis; nYB++) {
                 for (int nXB = 0; nXB < blocksPerXAxis; nXB++) {
 
-                    double thisBlock = nYB*blocksPerXAxis + nXB;
+                    double thisBlock = nYB * blocksPerXAxis + nXB;
                     log.status("Optimising...");
-                    log.progress(thisBlock/totalBlocks);
+                    log.progress(thisBlock / totalBlocks);
 
                     NTE.execute(new findBlockParameters(fpSR.duplicate().convertToFloatProcessor(),
                             fpRef.duplicate().convertToFloatProcessor(),
@@ -423,31 +423,31 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             FloatProcessor fpBetaMap = VI.calculateImage(w_SR, h_SR, xPositionsList, yPositionsList, betaList);
             FloatProcessor fpSigmaMap = VI.calculateImage(w_SR, h_SR, xPositionsList, yPositionsList, sigmaList);
 
-            fpAlphaMap.blurGaussian(blockSize/2);
-            fpBetaMap.blurGaussian(blockSize/2);
-            fpSigmaMap.blurGaussian(blockSize/2);
+            fpAlphaMap.blurGaussian(blockSize / 2);
+            fpBetaMap.blurGaussian(blockSize / 2);
+            fpSigmaMap.blurGaussian(blockSize / 2);
 
             float[] pixelsAlphaMap = (float[]) fpAlphaMap.getPixels();
             float[] pixelsBetaMap = (float[]) fpBetaMap.getPixels();
             float[] pixelsSRIntensityScaled = new float[nPixelsSR];
 
-            for(int i=0; i<nPixelsSR; i++){
-                pixelsSRIntensityScaled[i] = pixelsSR[i]*pixelsAlphaMap[i]+pixelsBetaMap[i];
+            for (int i = 0; i < nPixelsSR; i++) {
+                pixelsSRIntensityScaled[i] = pixelsSR[i] * pixelsAlphaMap[i] + pixelsBetaMap[i];
             }
             FloatProcessor fpSRIntensityScaled = new FloatProcessor(w_SR, h_SR, pixelsSRIntensityScaled);
-            imsSRIntensityScaled.setProcessor(fpSRIntensityScaled, s+1);
+            imsSRIntensityScaled.setProcessor(fpSRIntensityScaled, s + 1);
 
             FloatProcessor fpSRConvolved = new FloatProcessor(w_SR, h_SR);
 
             NTE = new NanoJThreadExecutor(false);
 
             // go back through blocks and convolve with local sigma
-            for(int nYB=0; nYB<blocksPerYAxis; nYB++){
-                for(int nXB=0; nXB<blocksPerXAxis; nXB++){
+            for (int nYB = 0; nYB < blocksPerYAxis; nYB++) {
+                for (int nXB = 0; nXB < blocksPerXAxis; nXB++) {
 
-                    double thisBlock = nYB*blocksPerXAxis + nXB;
+                    double thisBlock = nYB * blocksPerXAxis + nXB;
                     log.status("Creating diffraction-limited equivalent...");
-                    log.progress(thisBlock/totalBlocks);
+                    log.progress(thisBlock / totalBlocks);
 
                     NTE.execute(new convolveBlocks(fpSRIntensityScaled.duplicate().convertToFloatProcessor(),
                             fpSigmaMap.duplicate().convertToFloatProcessor(),
@@ -458,10 +458,10 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
             NTE.finish();
 
-            imsSRConvolved.setProcessor(fpSRConvolved, s+1);
-            imsAlphaMaps.setProcessor(fpAlphaMap, s+1);
-            imsBetaMaps.setProcessor(fpBetaMap, s+1);
-            imsSigmaMaps.setProcessor(fpSigmaMap, s+1);
+            imsSRConvolved.setProcessor(fpSRConvolved, s + 1);
+            imsAlphaMaps.setProcessor(fpAlphaMap, s + 1);
+            imsBetaMaps.setProcessor(fpBetaMap, s + 1);
+            imsSigmaMaps.setProcessor(fpSigmaMap, s + 1);
 
             // CALCULATE METRICS AND MAP
             log.status("Calculating similarity...");
@@ -477,28 +477,28 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             float[] pixelsSRC = (float[]) fpSRConvolved.getPixels();
 
             float maxRef = -Float.MAX_VALUE;
-            for(int p=0; p<nPixelsSR; p++){
+            for (int p = 0; p < nPixelsSR; p++) {
                 float vRef = pixelsRefScaledToSR[p];
                 float vSRC = pixelsSRC[p];
 
                 maxRef = max(maxRef, vRef); //why
-                if(showPositiveNegative) pixelsEMap[p] = (vRef - vSRC);
-                else pixelsEMap[p] = abs(vRef-vSRC);
+                if (showPositiveNegative) pixelsEMap[p] = (vRef - vSRC);
+                else pixelsEMap[p] = abs(vRef - vSRC);
             }
-            imsEMap.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsEMap), s+1);
+            imsEMap.setProcessor(new FloatProcessor(w_SR, h_SR, pixelsEMap), s + 1);
 
             // CALCULATE METRICS AND MAP FOR BOUNDARY PROBLEM CASES
             double globalRMSEBoundary = globalRMSE, globalPPMCCBoundary = globalPPMCC;
 
             /// put error values into table
             rt.incrementCounter();
-            rt.addValue("Frame", s+1);
+            rt.addValue("Frame", s + 1);
             rt.addValue("RSP (Resolution Scaled Pearson-Correlation)", globalPPMCC);
             rt.addValue("RSE (Resolution Scaled Error)", globalRMSE);
 
-            if(nSlicesSR>1) {
-                double frameTime = ((System.nanoTime() - loopStart) / (s+1)) / 1e9;
-                double remainingTime = frameTime * (nSlicesSR - (s+1));
+            if (nSlicesSR > 1) {
+                double frameTime = ((System.nanoTime() - loopStart) / (s + 1)) / 1e9;
+                double remainingTime = frameTime * (nSlicesSR - (s + 1));
                 int _h = (int) (remainingTime / 3600);
                 int _m = (int) (((remainingTime % 86400) % 3600) / 60);
                 int _s = (int) (((remainingTime % 86400) % 3600) % 60);
@@ -507,9 +507,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             }
 
         }
-
-        /// BUILD RSF STACK
-        //TODO: this.
 
         // Output images
 
@@ -762,6 +759,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
             if(nPixelsSRBlock!=(pixelsRefBlock.length*magnification2)){
                 sigmaList[index] = -1;
+                log.msg("sr pixels="+nPixelsSRBlock+", ref pixels="+pixelsRefBlock.length);
                 return;
             }
 
@@ -1014,60 +1012,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         }
 
         return fp;
-    }
-
-    float getIntegratedGaussian(float dx, float dy, float sigma2) {
-        float Ex = 0.5f * (erf((dx + 0.5f) / sigma2) - erf((dx - 0.5f) / sigma2));
-        float Ey = 0.5f * (erf((dy + 0.5f) / sigma2) - erf((dy - 0.5f) / sigma2));
-        float vKernel = Ex * Ey;
-        return vKernel;
-    }
-
-    float erf(float g) {
-        float x = abs(g);
-        if (x >= 4.0f)
-            return (g > 0.0f) ? 1.0f : -1.0f;
-
-        // constants
-        float a1 =  0.254829592f;
-        float a2 = -0.284496736f;
-        float a3 =  1.421413741f;
-        float a4 = -1.453152027f;
-        float a5 =  1.061405429f;
-        float p  =  0.3275911f;
-
-        // A&S formula 7.1.26
-        float t = 1.0f / (1.0f + p*x);
-        float y = (float) (1.0f - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*exp(-x*x));
-
-        return (g > 0.0f) ? y : -y;
-    }
-
-    private FloatProcessor getRSF(float sigma) {
-        // calculate the final RSF
-        float sigma2 = (float) (ROOT2*abs(sigma));
-        int radius = max(((int) sigma) * 3, 1);
-        int size = radius * 2 + 1;
-        float vKernelSum = 0;
-
-        FloatProcessor fpRSF = new FloatProcessor(size, size);
-        for (int dy = -radius; dy <= radius; dy++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                float vKernel = getIntegratedGaussian(dx, dy, sigma2);
-                vKernelSum+= vKernel;
-                fpRSF.setf(dx+radius, dy+radius, vKernel);
-            }
-        }
-        fpRSF.multiply(1./vKernelSum);
-        return fpRSF;
-    }
-
-    private float[] arrayListToFloatArray(ArrayList<Float> arrayList){
-        int nElements = arrayList.size();
-        float[] array = new float[nElements];
-
-        for(int n=0; n<nElements; n++) array[n] = arrayList.get(n);
-        return array;
     }
 
     private int[] arrayListToIntArray(ArrayList<Integer> arrayList){
