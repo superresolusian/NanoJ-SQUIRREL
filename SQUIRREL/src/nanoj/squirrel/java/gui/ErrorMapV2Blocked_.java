@@ -398,6 +398,7 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                 for (int nXB = 0; nXB < blocksPerXAxis; nXB++) {
 
                     double thisBlock = nYB*blocksPerXAxis + nXB;
+                    log.status("Optimising...");
                     log.progress(thisBlock/totalBlocks);
 
                     NTE.execute(new findBlockParameters(fpSR.duplicate().convertToFloatProcessor(),
@@ -437,26 +438,26 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             imsSRIntensityScaled.setProcessor(fpSRIntensityScaled, s+1);
 
             FloatProcessor fpSRConvolved = new FloatProcessor(w_SR, h_SR);
+
+            NTE = new NanoJThreadExecutor(false);
+
             // go back through blocks and convolve with local sigma
             for(int nYB=0; nYB<blocksPerYAxis; nYB++){
                 for(int nXB=0; nXB<blocksPerXAxis; nXB++){
-                    int blockWidth = w_SR/blocksPerXAxis;
-                    int blockHeight = h_SR/blocksPerYAxis;
 
-                    int xStartSR = nXB*blockWidth;
-                    int yStartSR = nYB*blockHeight;
-                    int xCentreSR = xStartSR+blockWidth/2;
-                    int yCentreSR = yStartSR+blockHeight/2;
+                    double thisBlock = nYB*blocksPerXAxis + nXB;
+                    log.status("Creating diffraction-limited equivalent...");
+                    log.progress(thisBlock/totalBlocks);
 
-                    FloatProcessor fp = fpSRIntensityScaled.duplicate().convertToFloatProcessor();
-                    float thisSigma = fpSigmaMap.getf(xCentreSR, yCentreSR);
-                    fp.blurGaussian(thisSigma);
+                    NTE.execute(new convolveBlocks(fpSRIntensityScaled.duplicate().convertToFloatProcessor(),
+                            fpSigmaMap.duplicate().convertToFloatProcessor(),
+                            fpSRConvolved, nXB, nYB));
 
-                    fp = getBlockFp(fp, nYB, nXB);
-
-                    fpSRConvolved = setBlock(fpSRConvolved, fp, xStartSR, yStartSR, fp.getWidth(), fp.getHeight());
                 }
             }
+
+            NTE.finish();
+
             imsSRConvolved.setProcessor(fpSRConvolved, s+1);
             imsAlphaMaps.setProcessor(fpAlphaMap, s+1);
             imsBetaMaps.setProcessor(fpBetaMap, s+1);
@@ -820,6 +821,40 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             alphaList[index] = alphaBoundary;
             betaList[index] = betaBoundary;
             sigmaList[index] = sigmaBoundary;
+        }
+
+
+    }
+
+    class convolveBlocks extends Thread{
+        FloatProcessor fpSRIntensityScaled, fpSigmaMap, fpSRConvolved;
+        int nXB, nYB;
+
+        public convolveBlocks(FloatProcessor fpSRIntensityScaled, FloatProcessor fpSigmaMap,
+                              FloatProcessor fpSRConvolved, int nXB, int nYB){
+            this.fpSRIntensityScaled = fpSRIntensityScaled;
+            this.fpSigmaMap = fpSigmaMap;
+            this.fpSRConvolved = fpSRConvolved;
+            this.nXB = nXB;
+            this.nYB = nYB;
+        }
+
+        public void run(){
+            int blockWidth = w_SR/blocksPerXAxis;
+            int blockHeight = h_SR/blocksPerYAxis;
+
+            int xStartSR = nXB*blockWidth;
+            int yStartSR = nYB*blockHeight;
+            int xCentreSR = xStartSR+blockWidth/2;
+            int yCentreSR = yStartSR+blockHeight/2;
+
+            FloatProcessor fp = fpSRIntensityScaled.duplicate().convertToFloatProcessor();
+            float thisSigma = fpSigmaMap.getf(xCentreSR, yCentreSR);
+            fp.blurGaussian(thisSigma);
+
+            fp = getBlockFp(fp, nYB, nXB);
+
+            fpSRConvolved = setBlock(fpSRConvolved, fp, xStartSR, yStartSR, fp.getWidth(), fp.getHeight());
         }
 
 
