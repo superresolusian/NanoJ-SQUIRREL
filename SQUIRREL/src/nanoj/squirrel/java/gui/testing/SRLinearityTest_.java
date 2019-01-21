@@ -11,6 +11,7 @@ import nanoj.core.java.image.filtering.Convolve;
 import java.io.IOException;
 
 import static java.lang.Math.max;
+import static java.lang.Math.min;
 
 /**
  * Created by sculley on 12/11/2018.
@@ -187,6 +188,11 @@ public class SRLinearityTest_ extends _BaseDialog_ {
         float[] pixelsShadow = (float[]) fpShadow.getPixels();
         float[] pixelsLargeGauss = (float[]) fpLargeGauss.getPixels();
         for(int i=0; i<nPixelsGT; i++) pixelsShadow[i] -= pixelsLargeGauss[i];
+
+        // make sure no sub-zero values
+        float minShadow = Float.MAX_VALUE;
+        for(int i=0; i<nPixelsGT; i++) minShadow = min(minShadow, pixelsShadow[i]);
+        for(int i=0; i<nPixelsGT; i++) pixelsShadow[i] -= minShadow;
 
         //// resize
         //fpShadow.setPixels(pixelsShadow);
