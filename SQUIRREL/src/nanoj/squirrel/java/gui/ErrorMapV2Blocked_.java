@@ -9,6 +9,7 @@ import ij.measure.ResultsTable;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import nanoj.core.java.gui._BaseDialog_;
+import nanoj.core.java.threading.NanoJThreadExecutor;
 import nanoj.kernels.Kernel_VoronoiImage;
 import nanoj.squirrel.java.gui.tools.SetMaximumStackSize_;
 import org.apache.commons.math3.analysis.UnivariateFunction;
@@ -366,10 +367,12 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
         blocksPerXAxis = (int) floor(w_SR/blockSize);
         blocksPerYAxis = (int) floor(h_SR/blockSize);
 
-        double inc = 1;
-        if(doSlidingWindow) inc = 0.5;
-        double totalBlocks = (blocksPerYAxis/inc)*(blocksPerXAxis*inc);
+        //double inc = 1;
+        //if(doSlidingWindow) inc = 0.5;
+        //double totalBlocks = (blocksPerYAxis*inc)*(blocksPerXAxis*inc);
+        int totalBlocks = blocksPerYAxis*blocksPerXAxis;
 
+        log.msg("blocks y="+blocksPerYAxis+", blocks x="+blocksPerXAxis+", totalblocks="+totalBlocks);
 
         long loopStart = System.nanoTime();
 
@@ -383,102 +386,41 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             float[] pixelsSR = (float[]) fpSR.getPixels();
 
             // create arraylists for parameter maps
-            ArrayList<Float> xPositionsList = new ArrayList<Float>();
-            ArrayList<Float> yPositionsList = new ArrayList<Float>();
-            ArrayList<Float> alphaList = new ArrayList<Float>();
-            ArrayList<Float> betaList = new ArrayList<Float>();
-            ArrayList<Float> sigmaList = new ArrayList<Float>();
+            float[] xPositionsList = new float[totalBlocks];
+            float[] yPositionsList = new float[totalBlocks];
+            float[] alphaList = new float[totalBlocks];
+            float[] betaList = new float[totalBlocks];
+            float[] sigmaList = new float[totalBlocks];
 
+            NanoJThreadExecutor NTE = new NanoJThreadExecutor(false);
 
-            for (double nYB = 0; nYB < blocksPerYAxis; nYB+=inc) {
-                for (double nXB = 0; nXB < blocksPerXAxis; nXB+=inc) {
+            for (int nYB = 0; nYB < blocksPerYAxis; nYB++) {
+                for (int nXB = 0; nXB < blocksPerXAxis; nXB++) {
 
                     double thisBlock = nYB*blocksPerXAxis + nXB;
                     log.progress(thisBlock/totalBlocks);
 
-                    boolean localOverblurFlag = false;
-                    FloatProcessor fpSRBlock = getBlockFp(fpSR, nYB, nXB);
-                    float[] pixelsRefBlock = getBlockPixels(fpRef, nYB, nXB);
-
-                    int blockWidthSR = fpSRBlock.getWidth();
-                    int blockHeightSR = fpSRBlock.getHeight();
-                    int xStartSR = (int) nXB*blockWidthSR;
-                    int yStartSR = (int) nYB*blockHeightSR;
-                    int nPixelsSRBlock = blockWidthSR*blockHeightSR;
-                    int blockWidthRef = blockWidthSR/magnification;
-                    int blockHeightRef = blockHeightSR/magnification;
-
-                    if(nPixelsSRBlock!=(pixelsRefBlock.length*magnification2)) continue;
-
-                    float[] ones = new float[nPixelsSRBlock];
-                    for(int i=0; i<nPixelsSRBlock; i++){ones[i] = 1;}
-
-
-                    // UNIVARIATE OPTIMIZER - LINEAR MATCHING
-                    /// setup optimizer
-                    sigmaOptimiseFunction f =  new ErrorMapV2Blocked_.sigmaOptimiseFunction(fpSRBlock, pixelsRefBlock, ones);
-                    UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
-
-                    /// run optimizer
-                    UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
-                            new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, blockWidthSR/2)); //limit to block width
-                    float sigma_linear = (float) result.getPoint();
-
-                    // GET ALPHA AND BETA
-                    FloatProcessor blurredFp = (FloatProcessor) fpSRBlock.duplicate();
-                    FloatProcessor blurredOnes = new FloatProcessor(blockWidthSR, blockHeightSR, ones);
-                    blurredFp.blurGaussian(sigma_linear);
-                    blurredOnes.blurGaussian(sigma_linear);
-
-                    blurredFp = (FloatProcessor) blurredFp.resize(blockWidthRef, blockHeightRef);
-                    blurredOnes = (FloatProcessor) blurredOnes.resize(blockWidthRef, blockHeightRef);
-
-                    float[] aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRefBlock, (float[]) blurredOnes.getPixels());
-                    float alpha = aB[0];
-                    float beta = aB[1];
-
-                    // check if sigma hit the boundary
-
-                    float alphaBoundary = alpha, betaBoundary = beta, sigmaBoundary = sigma_linear;
-                    if(sigma_linear>maxSigmaBoundary){
-                        sigmaBoundary = maxSigmaBoundary;
-                        localOverblurFlag = true;
-                        //log.msg(OVERBLUR_MESSAGE);
-                        // calculate alpha and beta with maxSigmaBoundary as blur
-                        blurredFp = (FloatProcessor) fpSRBlock.duplicate();
-                        blurredOnes = new FloatProcessor(blockWidthSR, blockHeightSR, ones);
-                        blurredFp.blurGaussian(maxSigmaBoundary);
-                        blurredOnes.blurGaussian(maxSigmaBoundary);
-
-                        blurredFp = (FloatProcessor) blurredFp.resize(blockWidthRef, blockHeightRef);
-                        blurredOnes = (FloatProcessor) blurredOnes.resize(blockWidthRef, blockHeightRef);
-
-                        aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRefBlock, (float[]) blurredOnes.getPixels());
-                        alphaBoundary = aB[0];
-                        betaBoundary = aB[1];
-                    }
-
-                    if(alphaBoundary<0) continue;
-
-                    xPositionsList.add((float) (xStartSR + blockWidthSR/2));
-                    yPositionsList.add((float) (yStartSR + blockHeightSR/2));
-                    alphaList.add(alphaBoundary);
-                    betaList.add(betaBoundary);
-                    sigmaList.add(sigmaBoundary);
+                    NTE.execute(new findBlockParameters(fpSR.duplicate().convertToFloatProcessor(),
+                            fpRef.duplicate().convertToFloatProcessor(),
+                            nYB, nXB, maxSigmaBoundary,
+                            xPositionsList, yPositionsList, alphaList, betaList, sigmaList));
 
                 }
             }
 
-            // convert arraylists into float arrays and create voronoi maps
-            float[] xPositions = arrayListToFloatArray(xPositionsList);
-            float[] yPositions = arrayListToFloatArray(yPositionsList);
-            float[] alphas = arrayListToFloatArray(alphaList);
-            float[] betas = arrayListToFloatArray(betaList);
-            float[] sigmas = arrayListToFloatArray(sigmaList);
+            NTE.finish();
 
-            FloatProcessor fpAlphaMap = VI.calculateImage(w_SR, h_SR, xPositions, yPositions, alphas);
-            FloatProcessor fpBetaMap = VI.calculateImage(w_SR, h_SR, xPositions, yPositions, betas);
-            FloatProcessor fpSigmaMap = VI.calculateImage(w_SR, h_SR, xPositions, yPositions, sigmas);
+            // get rid of bad values
+            int[] badIndices = getIndicesNegative(sigmaList);
+            xPositionsList = purgeBadValues(badIndices, xPositionsList);
+            yPositionsList = purgeBadValues(badIndices, yPositionsList);
+            alphaList = purgeBadValues(badIndices, alphaList);
+            betaList = purgeBadValues(badIndices, betaList);
+            sigmaList = purgeBadValues(badIndices, sigmaList);
+
+            FloatProcessor fpAlphaMap = VI.calculateImage(w_SR, h_SR, xPositionsList, yPositionsList, alphaList);
+            FloatProcessor fpBetaMap = VI.calculateImage(w_SR, h_SR, xPositionsList, yPositionsList, betaList);
+            FloatProcessor fpSigmaMap = VI.calculateImage(w_SR, h_SR, xPositionsList, yPositionsList, sigmaList);
 
             fpAlphaMap.blurGaussian(blockSize/2);
             fpBetaMap.blurGaussian(blockSize/2);
@@ -552,15 +494,6 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             rt.addValue("Frame", s+1);
             rt.addValue("RSP (Resolution Scaled Pearson-Correlation)", globalPPMCC);
             rt.addValue("RSE (Resolution Scaled Error)", globalRMSE);
-//            rt.addValue("Overblur warning", String.valueOf(globalOverblurFlag));
-//            if(!globalOverblurFlag){
-//                rt.addValue("RSP - constrained", "N/A");
-//                rt.addValue("RSE - constrained", "N/A");
-//            }
-//            else{
-//                rt.addValue("RSP - constrained", globalPPMCCBoundary);
-//                rt.addValue("RSE - constrained", globalRMSEBoundary);
-//            }
 
             if(nSlicesSR>1) {
                 double frameTime = ((System.nanoTime() - loopStart) / (s+1)) / 1e9;
@@ -789,6 +722,109 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
                 w_SR - abs(roundedMaxShiftX*magnification), h_SR - abs(roundedMaxShiftY*magnification), nSlicesSR);
     }
 
+    class findBlockParameters extends Thread{
+
+        FloatProcessor fpSR, fpRef;
+        int nYB, nXB;
+        float maxSigmaBoundary;
+        float[] xPositionsList, yPositionsList, alphaList, betaList, sigmaList;
+
+        public findBlockParameters(FloatProcessor fpSR, FloatProcessor fpRef,
+                                   int nYB, int nXB, float maxSigmaBoundary,
+                                   float[] xPositionsList, float[] yPositionsList,
+                                   float[] alphaList, float[] betaList, float[] sigmaList){
+            this.fpSR = fpSR;
+            this.fpRef = fpRef;
+            this.nXB = nXB;
+            this.nYB = nYB;
+            this.maxSigmaBoundary = maxSigmaBoundary;
+            this.xPositionsList = xPositionsList;
+            this.yPositionsList = yPositionsList;
+            this.alphaList = alphaList;
+            this.betaList = betaList;
+            this.sigmaList = sigmaList;
+        }
+
+        public void run(){
+            FloatProcessor fpSRBlock = getBlockFp(fpSR, nYB, nXB);
+            float[] pixelsRefBlock = getBlockPixels(fpRef, nYB, nXB);
+
+            int index = nYB*blocksPerXAxis + nXB;
+
+            int blockWidthSR = fpSRBlock.getWidth();
+            int blockHeightSR = fpSRBlock.getHeight();
+            int xStartSR = (int) nXB*blockWidthSR;
+            int yStartSR = (int) nYB*blockHeightSR;
+            int nPixelsSRBlock = blockWidthSR*blockHeightSR;
+            int blockWidthRef = blockWidthSR/magnification;
+            int blockHeightRef = blockHeightSR/magnification;
+
+            if(nPixelsSRBlock!=(pixelsRefBlock.length*magnification2)){
+                sigmaList[index] = -1;
+                return;
+            }
+
+            float[] ones = new float[nPixelsSRBlock];
+            for(int i=0; i<nPixelsSRBlock; i++){ones[i] = 1;}
+
+
+            // UNIVARIATE OPTIMIZER - LINEAR MATCHING
+            /// setup optimizer
+            sigmaOptimiseFunction f =  new ErrorMapV2Blocked_.sigmaOptimiseFunction(fpSRBlock, pixelsRefBlock, ones);
+            UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
+
+            /// run optimizer
+            UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
+                    new UnivariateObjectiveFunction(f), GoalType.MINIMIZE, new SearchInterval(0, blockWidthSR/2)); //limit to block width
+            float sigma_linear = (float) result.getPoint();
+
+            // GET ALPHA AND BETA
+            FloatProcessor blurredFp = (FloatProcessor) fpSRBlock.duplicate();
+            FloatProcessor blurredOnes = new FloatProcessor(blockWidthSR, blockHeightSR, ones);
+            blurredFp.blurGaussian(sigma_linear);
+            blurredOnes.blurGaussian(sigma_linear);
+
+            blurredFp = (FloatProcessor) blurredFp.resize(blockWidthRef, blockHeightRef);
+            blurredOnes = (FloatProcessor) blurredOnes.resize(blockWidthRef, blockHeightRef);
+
+            float[] aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRefBlock, (float[]) blurredOnes.getPixels());
+            float alpha = aB[0];
+            float beta = aB[1];
+
+            // check if sigma hit the boundary
+
+            float alphaBoundary = alpha, betaBoundary = beta, sigmaBoundary = sigma_linear;
+            if(sigma_linear>maxSigmaBoundary){
+                sigmaBoundary = maxSigmaBoundary;
+                // calculate alpha and beta with maxSigmaBoundary as blur
+                blurredFp = (FloatProcessor) fpSRBlock.duplicate();
+                blurredOnes = new FloatProcessor(blockWidthSR, blockHeightSR, ones);
+                blurredFp.blurGaussian(maxSigmaBoundary);
+                blurredOnes.blurGaussian(maxSigmaBoundary);
+
+                blurredFp = (FloatProcessor) blurredFp.resize(blockWidthRef, blockHeightRef);
+                blurredOnes = (FloatProcessor) blurredOnes.resize(blockWidthRef, blockHeightRef);
+
+                aB = calculateAlphaBeta((float[]) blurredFp.getPixels(), pixelsRefBlock, (float[]) blurredOnes.getPixels());
+                alphaBoundary = aB[0];
+                betaBoundary = aB[1];
+            }
+
+            if(alphaBoundary<0){
+                sigmaList[index] = -1;
+                return;
+            }
+
+            xPositionsList[index]=(float) (xStartSR + blockWidthSR/2);
+            yPositionsList[index] = (float) (yStartSR + blockHeightSR/2);
+            alphaList[index] = alphaBoundary;
+            betaList[index] = betaBoundary;
+            sigmaList[index] = sigmaBoundary;
+        }
+
+
+    }
+
     float[] getBlockPixels(FloatProcessor fp, double nYB, double nXB){
         int w = fp.getWidth();
         int h = fp.getHeight();
@@ -997,5 +1033,45 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
 
         for(int n=0; n<nElements; n++) array[n] = arrayList.get(n);
         return array;
+    }
+
+    private int[] arrayListToIntArray(ArrayList<Integer> arrayList){
+        int nElements = arrayList.size();
+        int[] array = new int[nElements];
+
+        for(int n=0; n<nElements; n++) array[n] = arrayList.get(n);
+        return array;
+    }
+
+    private int[] getIndicesNegative(float[] array){
+        ArrayList<Integer> negativeList = new ArrayList<Integer>();
+        for(int i=0; i<array.length; i++){
+            if(array[i]<0) negativeList.add(i);
+        }
+        return arrayListToIntArray(negativeList);
+    }
+
+    private float[] purgeBadValues(int[] badIndices, float[] array){
+
+        float[] purgedArray = new float[array.length-badIndices.length];
+
+        int counter = 0;
+
+        for(int i=0; i<array.length; i++){
+            boolean isGood = true;
+
+            for(int j=0; j<badIndices.length; j++){
+                if(i==badIndices[j]) isGood=false;
+            }
+
+            if(isGood){
+                purgedArray[counter] = array[i];
+                counter++;
+            }
+
+        }
+
+        return purgedArray;
+
     }
 }
