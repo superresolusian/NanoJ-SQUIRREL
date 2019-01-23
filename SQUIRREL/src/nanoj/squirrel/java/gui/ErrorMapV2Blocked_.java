@@ -766,6 +766,27 @@ public class ErrorMapV2Blocked_ extends _BaseDialog_ {
             float[] ones = new float[nPixelsSRBlock];
             for(int i=0; i<nPixelsSRBlock; i++){ones[i] = 1;}
 
+            //check if block contains only zeros
+            float[] pixelsSRBlock = (float[]) fpSRBlock.getPixels();
+            float sumPixels = 0;
+            for(int i=0; i<nPixelsSRBlock; i++){
+                sumPixels += pixelsSRBlock[i];
+            }
+
+            if(sumPixels==0){
+                int nPixelsRefBlock = pixelsRefBlock.length;
+                float beta = 0;
+                for(int i=0; i<nPixelsRefBlock; i++){
+                    beta += pixelsRefBlock[i]/nPixelsRefBlock;
+                }
+                xPositionsList[index]=(float) (xStartSR + blockWidthSR/2);
+                yPositionsList[index] = (float) (yStartSR + blockHeightSR/2);
+                alphaList[index] = 0;
+                betaList[index] = beta;
+                sigmaList[index] = maxSigmaBoundary;
+                return;
+            }
+
 
             // UNIVARIATE OPTIMIZER - LINEAR MATCHING
             /// setup optimizer
