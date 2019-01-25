@@ -1,4 +1,4 @@
-package nanoj.squirrel.java.gui;
+package nanoj.squirrel.java.gui.testing;
 
 import ij.ImagePlus;
 import ij.ImageStack;
