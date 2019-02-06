@@ -88,12 +88,12 @@ public class ImageSizeTest_ extends _BaseSQUIRRELDialog_ {
     @Override
     public void execute() throws InterruptedException, IOException {
 
-        int[] imSizeRef = new int[]{64, 128, 256, 512, 1048};
+        int[] imSizeRef = new int[]{50, 100, 150, 200, 250, 300};
         // populate results table
         ResultsTable rt = new ResultsTable();
 
         // let's go
-        for(int n=0; n<5; n++){
+        for(int n=0; n<imSizeRef.length; n++){
 
             int w_Ref = imSizeRef[n];
             int h_Ref = imSizeRef[n];
@@ -109,6 +109,7 @@ public class ImageSizeTest_ extends _BaseSQUIRRELDialog_ {
             double[] noiseVars = new double[nRepeats];
 
             for(int j=0; j<nRepeats; j++) {
+                log.status("Image size "+w_SR+": repeat "+(j+1)+"/"+nRepeats);
                 //decide on structure
                 int randStruct = random.nextInt(3);
                 structure[j] = structureOptions[randStruct];
@@ -223,6 +224,7 @@ public class ImageSizeTest_ extends _BaseSQUIRRELDialog_ {
                 rt.addValue("SQUIRREL runtime", SQUIRRELTimes[i]);
                 rt.addValue("UNIQORN! runtime", UNIQORNTimes[i]);
             }
+            log.msg("Finished image size "+w_SR+"! :)");
         }
 
         rt.show("Results");
