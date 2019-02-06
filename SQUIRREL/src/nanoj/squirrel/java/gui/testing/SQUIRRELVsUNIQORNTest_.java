@@ -23,10 +23,10 @@ import static nanoj.kernels.Kernel_BasePSO.*;
 public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
 
     String[] structureOptions = new String[]{"0-D (dots)", "1-D (lines)", "2-D (patches)"};
-    double maxAlpha, maxBeta, maxSigma;
-    double minAlpha, minBeta, minSigma;
+    double maxAlpha, maxBeta, maxSigma, maxGamma;
+    double minAlpha, minBeta, minSigma, minGamma;
     int nRepeats;
-    boolean addNoise;
+    boolean testGamma, varyBeta, addNoise;
 
     int w_SR=500, h_SR=500, w_Ref=100, h_Ref=100, magnification=5;
 
@@ -45,15 +45,20 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
     public void setupDialog() {
         gd = new NonBlockingGenericDialog("Simulation situation");
 
-        gd.addNumericField("Minimum α", getPrefs("minAlpha", 100), 1);
+        gd.addNumericField("Minimum α", getPrefs("minAlpha", 0.1), 1);
         gd.addNumericField("Maximum α", getPrefs("maxAlpha", 10000), 0);
 
-        gd.addNumericField("Minimum β", getPrefs("minBeta", 50), 1);
+        gd.addNumericField("Minimum β", getPrefs("minBeta", 1), 1);
         gd.addNumericField("Maximum β", getPrefs("maxBeta", 5000), 0);
 
         gd.addNumericField("Minimum σ", getPrefs("minSigma", 1), 1);
         gd.addNumericField("Maximum σ", getPrefs("maxSigma", 15), 1);
 
+        gd.addNumericField("Minimum gamma", getPrefs("minGamma", 0.5), 1);
+        gd.addNumericField("Maximum gamma", getPrefs("maxGamma", 3), 1);
+
+        gd.addCheckbox("Test gamma?", getPrefs("testGamma", false));
+        gd.addCheckbox("Inhomogeneous beta?", getPrefs("varyBeta", false));
         gd.addCheckbox("Add noise?", getPrefs("addNoise", false));
 
         gd.addNumericField("Number of trials", getPrefs("nRepeats", 100), 0);
@@ -69,7 +74,11 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
         maxBeta = gd.getNextNumber();
         minSigma = gd.getNextNumber();
         maxSigma = gd.getNextNumber();
+        minGamma = gd.getNextNumber();
+        maxGamma = gd.getNextNumber();
 
+        testGamma = gd.getNextBoolean();
+        varyBeta = gd.getNextBoolean();
         addNoise = gd.getNextBoolean();
         nRepeats = (int) gd.getNextNumber();
 
@@ -79,6 +88,10 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
         setPrefs("maxBeta", maxBeta);
         setPrefs("minSigma", minSigma);
         setPrefs("maxSigma", maxSigma);
+        setPrefs("minGamma", minGamma);
+        setPrefs("maxGamma", maxGamma);
+        setPrefs("testGamma", testGamma);
+        setPrefs("varyBeta", varyBeta);
         setPrefs("addNoise", addNoise);
         setPrefs("nRepeats", nRepeats);
 
@@ -91,6 +104,7 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
         // set up output images and arrays
         ImageStack imsSR = new ImageStack(w_SR, h_SR, nRepeats);
         ImageStack imsRef = new ImageStack(w_Ref, h_Ref, nRepeats);
+        ImageStack imsGT = new ImageStack(w_SR, h_SR, nRepeats);
 
         String[] structure = new String[nRepeats];
         double[] coverage = new double[nRepeats];
@@ -107,9 +121,14 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
         double[] SQUIRRELBeta = new double[nRepeats];
         double[] SQUIRRELSigma = new double[nRepeats];
 
+        double[] SQUIRRELErrors = new double[nRepeats];
+        double[] UNIQORNErrors = new double[nRepeats];
+
         double[] UNIQORNTimes = new double[nRepeats];
         double[] SQUIRRELTimes = new double[nRepeats];
 
+        double[] gammas = new double[nRepeats];
+        double[] betaVars = new double[nRepeats];
         double[] noiseVars = new double[nRepeats];
 
         // let's go
@@ -126,20 +145,22 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
             double target = thisCoverage*w_SR*h_SR;
 
             // generate image
-            FloatProcessor fpSR;
+            FloatProcessor fpGT;
+            FloatProcessor fpGTSQUIRREL, fpGTUNIQORN;
 
             if(randStruct==0){
-                fpSR = getDotImage(target);
+                fpGT = getDotImage(target);
             }
             else if(randStruct==1){
-                fpSR = getLineImage(target);
+                fpGT = getLineImage(target);
             }
             else{
-                fpSR = getPatchImage(target);
+                fpGT = getPatchImage(target);
             }
 
-            fpSR.multiply(1000);
-            imsSR.setProcessor(fpSR, i+1);
+            fpGT.multiply(100);
+            if(testGamma) imsGT.setProcessor(fpGT, i+1);
+            else imsSR.setProcessor(fpGT, i+1);
 
             // get parameters for this run
             double thisAlpha = random.nextDouble()*(maxAlpha-minAlpha) + minAlpha;
@@ -151,11 +172,17 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
             trueSigma[i] = thisSigma;
 
             // generate reference image
-            FloatProcessor fpRef = (FloatProcessor) fpSR.duplicate();
+            FloatProcessor fpRef = new FloatProcessor(w_SR, h_SR, (float[]) fpGT.getPixelsCopy());
             fpRef.multiply(thisAlpha);
-            fpRef.add(thisBeta);
+            if(varyBeta){
+                double betaGradient = random.nextDouble()*0.5;
+                betaVars[i] = betaGradient;
+                double betaDirection = random.nextDouble();
+                fpRef = addVaryingBeta(fpRef, thisBeta, betaGradient, betaDirection);
+            }
+            else fpRef.add(thisBeta);
             fpRef.blurGaussian(thisSigma);
-            fpRef = (FloatProcessor) fpRef.resize(w_Ref, h_Ref);
+            fpRef = fpRef.resize(w_Ref, h_Ref).convertToFloatProcessor();
 
             if(addNoise) {
                 float[] pixelsRef = (float[]) fpRef.getPixels();
@@ -170,7 +197,24 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
             }
             imsRef.setProcessor(fpRef, i+1);
 
+            FloatProcessor fpSR = new FloatProcessor(w_SR, h_SR, (float[]) fpGT.getPixelsCopy());
+
+            if(testGamma){
+                // blur with 50nm PSF
+                fpSR.blurGaussian(2);
+                float[] pixels = (float[]) fpSR.getPixels();
+                //gamma transform
+                double thisGamma = random.nextDouble()*(maxGamma-minGamma)+minGamma;
+                gammas[i] = thisGamma;
+                for(int p=0; p<pixels.length; p++)pixels[p] = (float) pow(pixels[p], thisGamma);
+                fpSR.setPixels(pixels);
+                imsSR.setProcessor(fpSR, i+1);
+            }
+
             log.status("Trial "+(i+1)+" - running SQUIRREL");
+
+            FloatProcessor fpSRSQUIRREL = new FloatProcessor(w_SR, h_SR, (float[]) fpSR.getPixelsCopy());
+            FloatProcessor fpRefSQUIRREL = new FloatProcessor(w_Ref, h_Ref, (float[]) fpRef.getPixelsCopy());
 
             // PSO
             long SQUIRRELStart = System.currentTimeMillis();
@@ -178,7 +222,7 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
             kPSOErrorMap.maxMagnification = magnification;
             double sigmaGuess=0;
             double[] results;
-            results = kPSOErrorMap.calculate(fpRef, fpSR, 10, 300,
+            results = kPSOErrorMap.calculate(fpRefSQUIRREL, fpSRSQUIRREL, 10, 300,
                     new double[]{0.001, -1000, 0.5}, // low boundary
                     new double[]{100, 1000, 10}, // high boundary
                     new double[]{10, 0, sigmaGuess==0?5:sigmaGuess}, // best guess
@@ -187,6 +231,14 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
 
             long SQUIRRELStop = System.currentTimeMillis();
 
+//            FloatProcessor fpTestS = new FloatProcessor(w_SR, h_SR, (float[]) fpGT.getPixelsCopy());
+//            fpTestS.multiply(results[0]);
+//            fpTestS.add(results[1]);
+//            fpTestS.blurGaussian(results[2]*magnification);
+//            fpTestS = fpTestS.resize(w_Ref, h_Ref).convertToFloatProcessor();
+//            new ImagePlus("SQUIRREL SR-DL", fpTestS).show();
+
+            SQUIRRELErrors[i] = kPSOErrorMap.getGlobalBestError();
             SQUIRRELTimes[i] = SQUIRRELStop-SQUIRRELStart;
             SQUIRRELAlpha[i] = results[0];
             SQUIRRELBeta[i] = results[1];
@@ -194,18 +246,21 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
 
             log.status("Trial "+(i+1)+" - running UNIQORN!");
 
+            FloatProcessor fpSRUNIQORN = new FloatProcessor(w_SR, h_SR, (float[]) fpSR.getPixelsCopy());
+            FloatProcessor fpRefUNIQORN = new FloatProcessor(w_Ref, h_Ref, (float[]) fpRef.getPixelsCopy());
+
             // run UNIQORN
             long UNIQORNStart = System.currentTimeMillis();
 
-            float[] pixelsRef = (float[]) fpRef.duplicate().convertToFloatProcessor().getPixels();
-            int nPixelsSR = fpSR.getPixelCount();
+            float[] pixelsRef = (float[]) fpRefUNIQORN.getPixels();
+            int nPixelsSR = fpSRUNIQORN.getPixelCount();
 
             float[] ones = new float[nPixelsSR];
             for(int n=0; n<nPixelsSR; n++){ones[n] = 1;}
 
             // UNIVARIATE OPTIMIZER - LINEAR MATCHING
             /// setup optimizer
-            UnivariateFunction f =  new SQUIRRELVsUNIQORNTest_.sigmaOptimiseFunction(fpSR.duplicate().convertToFloatProcessor(), pixelsRef, ones);
+            UnivariateFunction f =  new SQUIRRELVsUNIQORNTest_.sigmaOptimiseFunction(fpSRUNIQORN, pixelsRef, ones);
             UnivariateOptimizer optimizer = new BrentOptimizer(1e-10, 1e-14);
             /// run optimizer
             UnivariatePointValuePair result = optimizer.optimize(new MaxEval(1000),
@@ -228,6 +283,14 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
 
             long UNIQORNStop = System.currentTimeMillis();
 
+//            FloatProcessor fpTest = new FloatProcessor(w_SR, h_SR, (float[]) fpGT.getPixelsCopy());
+//            fpTest.multiply(alpha);
+//            fpTest.add(beta);
+//            fpTest.blurGaussian(sigma_linear);
+//            fpTest = fpTest.resize(w_Ref, h_Ref).convertToFloatProcessor();
+//            new ImagePlus("UNIQORN! SR-DL", fpTest).show();
+
+            UNIQORNErrors[i] = (float) result.getValue();
             UNIQORNTimes[i] = UNIQORNStop-UNIQORNStart;
             UNIQORNAlpha[i] = alpha;
             UNIQORNBeta[i] = beta;
@@ -236,7 +299,8 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
         }
 
         // display images
-        new ImagePlus("GT images", imsSR).show();
+        if(testGamma){ new ImagePlus("GT images", imsGT).show();}
+        new ImagePlus("SR images", imsSR).show();
         new ImagePlus("Reference images", imsRef).show();
 
         // populate results table
@@ -250,6 +314,12 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
             if(addNoise){
                 rt.addValue("Noise variance", noiseVars[i]);
             }
+            if(testGamma){
+                rt.addValue("Gamma", gammas[i]);
+            }
+            if(varyBeta){
+                rt.addValue("Beta gradient", betaVars[i]);
+            }
             rt.addValue("True alpha", trueAlpha[i]);
             rt.addValue("True beta", trueBeta[i]);
             rt.addValue("True sigma", trueSigma[i]);
@@ -259,6 +329,8 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
             rt.addValue("UNIQORN! alpha", UNIQORNAlpha[i]);
             rt.addValue("UNIQORN! beta", UNIQORNBeta[i]);
             rt.addValue("UNIQORN! sigma", UNIQORNSigma[i]);
+            rt.addValue("SQUIRREL error", SQUIRRELErrors[i]);
+            rt.addValue("UNIQORN! error", UNIQORNErrors[i]);
             rt.addValue("SQUIRREL runtime", SQUIRRELTimes[i]);
             rt.addValue("UNIQORN! runtime", UNIQORNTimes[i]);
         }
@@ -338,6 +410,34 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
         }
 
         return fp;
+    }
+
+    FloatProcessor addVaryingBeta(FloatProcessor fp, double beta, double gradient, double direction){
+        float[] pixels = (float[]) fp.getPixels();
+        double startBeta = beta*(1-gradient/2);
+        double endBeta = beta*(1+gradient/2);
+
+        if(direction<0.5){
+            double betaIncrement = (endBeta-startBeta)/h_SR;
+            for(int y=0; y<h_SR; y++){
+                float thisBeta = (float) (startBeta+(y*betaIncrement));
+                for(int x=0; x<w_SR; x++){
+                    int p = y*w_SR + x;
+                    pixels[p] += thisBeta;
+                }
+            }
+        }
+        else{
+            double betaIncrement = (endBeta-startBeta)/w_SR;
+            for(int x=0; x<w_SR; x++){
+                float thisBeta = (float) (startBeta+(x*betaIncrement));
+                for(int y=0; y<h_SR; y++){
+                    int p = y*w_SR + x;
+                    pixels[p] += thisBeta;
+                }
+            }
+        }
+        return new FloatProcessor(w_SR, h_SR, pixels);
     }
 
     int getSum(FloatProcessor fp){
@@ -437,17 +537,16 @@ public class SQUIRRELVsUNIQORNTest_ extends _BaseSQUIRRELDialog_ {
         return new float[] {alphaHat, betaHat};
     }
 
-    private float calculateRMSE(float[] array1, float[] array2){
+    private double calculateRMSE(float[] array1, float[] array2){
 
-        int N = array1.length;
+        double N = array1.length;
         double MSE = 0;
 
         for(int i=0; i<N; i++){
-            MSE += (array1[i]-array2[i])*(array1[i]-array2[i]);
+            MSE += pow((array1[i]-array2[i]),2)/N;
         }
-        MSE /= N;
 
-        return (float) Math.sqrt(MSE);
+        return Math.sqrt(MSE);
     }
 
     private float getMean(float[] array){
