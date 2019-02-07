@@ -13,7 +13,7 @@ import nanoj.kernels.Kernel_SquirrelSwarmOptimizer;
 import nanoj.squirrel.java._BaseSQUIRRELDialog_;
 import nanoj.squirrel.java.gui.tools.SetMaximumStackSize_;
 import nanoj.squirrel.java.minimizers.GaussianFitMinimizer;
-import org.w3c.dom.Window;
+
 
 import java.awt.*;
 import java.util.ArrayList;
