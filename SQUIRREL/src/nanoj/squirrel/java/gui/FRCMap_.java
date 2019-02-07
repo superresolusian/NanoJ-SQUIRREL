@@ -25,10 +25,6 @@ public class FRCMap_ extends _BaseSQUIRRELDialog_ {
     private final static Kernel_VoronoiImage VI = new Kernel_VoronoiImage();
     private double pixelSize;
 
-    String[] thresholdMethods = new String[]{"1/7", "Half bit", "One bit", "Two bit", "One sigma", "Two sigma",
-                                            "Three sigma", "Four sigma"};
-    String thresholdMethod;
-
     @Override
     public boolean beforeSetupDialog(String arg) {
         autoOpenImp = true;
@@ -52,7 +48,6 @@ public class FRCMap_ extends _BaseSQUIRRELDialog_ {
         gd = new NonBlockingGenericDialog("Calculate FRC Map...");
         gd.addNumericField("Blocks per axis (default: 10)", getPrefs("blocksPerAxis", 10), 0);
         gd.addNumericField("Pixel size (nm)", getPrefs("pixelSize", 25), 2);
-        gd.addChoice("Threshold method", thresholdMethods, getPrefs("thresholdMethod", thresholdMethods[0]));
 
         gd.addCheckbox("Show preview", false);
 
@@ -65,13 +60,11 @@ public class FRCMap_ extends _BaseSQUIRRELDialog_ {
 
         blocksPerXAxis = blocksPerAxis;
         blocksPerYAxis = (int) (blocksPerXAxis * (((double) h)/w));
-        thresholdMethod = gd.getNextChoice();
 
         showPreview = gd.getNextBoolean();
 
         setPrefs("blocksPerAxis", blocksPerAxis);
         setPrefs("pixelSize", pixelSize);
-        setPrefs("thresholdMethod", thresholdMethod);
         return true;
     }
 
@@ -120,8 +113,6 @@ public class FRCMap_ extends _BaseSQUIRRELDialog_ {
 
         //new ImagePlus("FRC Mask", imsMask).show();
         rt.show("FRC-Resolution");
-
-        log.msg("Threshold method is "+thresholdMethod);
     }
 
     public FRCData calculateFRCMap(FloatProcessor ip1, FloatProcessor ip2) {
@@ -209,7 +200,7 @@ public class FRCMap_ extends _BaseSQUIRRELDialog_ {
 
             FloatProcessor ipROI1 = getROI(ip1, xStart, yStart, blockWidth, blockHeight);
             FloatProcessor ipROI2 = getROI(ip2, xStart, yStart, blockWidth, blockHeight);
-            double resolution = myFRC.calculateFireNumber(ipROI1, ipROI2, setMethod(thresholdMethod));
+            double resolution = myFRC.calculateFireNumber(ipROI1, ipROI2, FRC.ThresholdMethod.FIXED_1_OVER_7);
 
             if (Double.isNaN(resolution)) return;
 
@@ -220,18 +211,6 @@ public class FRCMap_ extends _BaseSQUIRRELDialog_ {
             }
             vectors.add(new double[]{xStart+blockWidth/2., yStart+blockHeight/2., resolution*pixelSize});
         }
-    }
-
-    public FRC.ThresholdMethod setMethod(String method){
-        if(method==thresholdMethods[0]) return FRC.ThresholdMethod.FIXED_1_OVER_7;
-        if(method==thresholdMethods[1]) return FRC.ThresholdMethod.HALF_BIT;
-        if(method==thresholdMethods[2]) return FRC.ThresholdMethod.ONE_BIT;
-        if(method==thresholdMethods[3]) return FRC.ThresholdMethod.TWO_BIT;
-        if(method==thresholdMethods[4]) return FRC.ThresholdMethod.ONE_SIGMA;
-        if(method==thresholdMethods[5]) return FRC.ThresholdMethod.TWO_SIGMA;
-        if(method==thresholdMethods[6]) return FRC.ThresholdMethod.THREE_SIGMA;
-        if(method==thresholdMethods[7]) return FRC.ThresholdMethod.FOUR_SIGMA;
-        return FRC.ThresholdMethod.FIXED_1_OVER_7;
     }
 
 }
