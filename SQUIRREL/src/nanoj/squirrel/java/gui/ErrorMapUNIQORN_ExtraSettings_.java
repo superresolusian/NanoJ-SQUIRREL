@@ -9,7 +9,7 @@ import java.io.IOException;
 /**
  * Created by sculley on 14/06/2017.
  */
-public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
+public class ErrorMapUNIQORN_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
 
     @Override
     public boolean beforeSetupDialog(String arg) {
@@ -22,6 +22,9 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
     public void setupDialog() {
         gd = new NonBlockingGenericDialog("Calculate Error Map Advanced Settings...");
         gd.hideCancelButton();
+
+        gd.addMessage("-=-= Optimiser settings =-=-");
+        gd.addCheckbox("Enable smart boundary (PSF sigma ≤ 200nm) (default: active)", getPrefs("smartBoundary", true));
 
         gd.addMessage("-=-= Frame purge =-=-");
         gd.addCheckbox("Check and purge empty frames?", getPrefs("framePurge", false));
@@ -37,13 +40,14 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
         gd.addCheckbox("Show intensity-normalised and cropped super-resolution image(s) (default:active)", getPrefs("showIntensityNormalised", true));
         gd.addMessage("The above output is required for image fusion", new Font("Arial", Font.ITALIC, 12));
         gd.addCheckbox("Show_RSF-convolved super-resolution image(s) (default: active)", getPrefs("showConvolved", true));
-        gd.addCheckbox("Show_RSF image(s) (default: disabled)", getPrefs("showRSF", false));
         gd.addCheckbox("Show_positive and negative contributions to error map (default: disabled)", getPrefs("showPositiveNegative", false));
         gd.addMessage("If the above checkbox is disabled, error map will just contain absolute values of errors.", new Font("Arial", Font.ITALIC, 12));
 
     }
 
     public boolean loadSettings(){
+
+        boolean smartBoundary = gd.getNextBoolean();
 
         boolean framePurge = gd.getNextBoolean();
         boolean borderControl = gd.getNextBoolean();
@@ -53,8 +57,9 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
 
         boolean showIntensityNormalised = gd.getNextBoolean();
         boolean showConvolved = gd.getNextBoolean();
-        boolean showRSF = gd.getNextBoolean();
         boolean showPositiveNegative = gd.getNextBoolean();
+
+        setPrefs("smartBoundary", smartBoundary);
 
         setPrefs("framePurge", framePurge);
         setPrefs("borderControl", borderControl);
@@ -64,7 +69,6 @@ public class ErrorMap_ExtraSettings_ extends _BaseSQUIRRELDialog_ {
 
         setPrefs("showIntensityNormalised", showIntensityNormalised);
         setPrefs("showConvolved", showConvolved);
-        setPrefs("showRSF", showRSF);
         setPrefs("showPositiveNegative", showPositiveNegative);
 
         prefs.savePreferences();
