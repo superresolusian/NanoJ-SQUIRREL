@@ -371,7 +371,7 @@ public class ErrorMapUNIQORN_ extends _BaseSQUIRRELDialog_ {
             log.msg("Alpha is: "+alpha+", beta is: "+beta);
 
             // check if sigma hit the boundary
-            if(abs(sigma_linear-smartSigmaBoundary)<0.001)  overblurFlag = true;
+            if(abs(sigma_linear-smartSigmaBoundary)<0.001 || sigma_linear>smartSigmaBoundary)  overblurFlag = true;
 
             // POPULATE OUTPUT STACKS
 
