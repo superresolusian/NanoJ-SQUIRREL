@@ -16,8 +16,8 @@ public class Version extends _Version_ {
     protected final static int major = 1;
     protected final static int minor = 2;
     protected final static int status = 1; // 0 - alpha, 1 - beta, 2 - release candidate, 3 - stable
-    protected final static int release = 1;
-    protected final static String codename = "Baby UNIQORN";
+    protected final static int release = 2;
+    protected final static String codename = "Baby UNIQORN!";
     public final static String header = "NanoJ-SQUIRREL: ";
     public final static String WHATS_NEW =
             nanoj.core.java.Version.WHATS_NEW +  "\n \n" +
