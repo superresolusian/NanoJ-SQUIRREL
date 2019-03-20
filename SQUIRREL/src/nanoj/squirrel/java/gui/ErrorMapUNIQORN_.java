@@ -5,7 +5,6 @@ import ij.ImagePlus;
 import ij.ImageStack;
 import ij.WindowManager;
 import ij.gui.NonBlockingGenericDialog;
-import ij.gui.Plot;
 import ij.measure.ResultsTable;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
@@ -16,13 +15,11 @@ import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
 import org.apache.commons.math3.optim.univariate.*;
 
-import java.awt.*;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 
 import static java.lang.Math.*;
-import static nanoj.core.java.array.ArrayCasting.toArray;
 import static nanoj.core.java.array.ArrayMath.calculateMSE;
 import static nanoj.core.java.array.ArrayMath.calculatePPMCC;
 import static nanoj.core.java.image.drift.EstimateShiftAndTilt.MAX_FITTING;
@@ -100,7 +97,7 @@ public class ErrorMapUNIQORN_ extends _BaseSQUIRRELDialog_ {
     public void setupDialog() {
 
         gd = new NonBlockingGenericDialog("Calculate Error Map, RSE and RSP");
-        gd.addMessage("This is a beta version of SQUIRREL using the new UNIQORN optimiser");
+        gd.addMessage("This is a beta version of SQUIRREL using the new UNIQORN! optimiser");
         gd.addHelp("https://bitbucket.org/rhenriqueslab/nanoj-squirrel");
 
         if (titleRefImage.equals("")) {
