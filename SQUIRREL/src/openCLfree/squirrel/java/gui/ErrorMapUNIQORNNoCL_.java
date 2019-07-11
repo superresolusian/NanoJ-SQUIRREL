@@ -43,7 +43,6 @@ public class ErrorMapUNIQORNNoCL_ extends _BaseSQUIRRELDialogNoCL_ {
     protected ErrorMapUNIQORNNoCL_ExtraSettings_ errorMap_ExtraSettings = new ErrorMapUNIQORNNoCL_ExtraSettings_();
     protected ErrorMapUNIQORNNoCL_ExtraSettings_ _errorMap_ExtraSettings;
 
-    ArrayList<String> titles = new ArrayList<String>();
     String[] imageTitles;
 
     int maxSigma = 200;
@@ -112,7 +111,6 @@ public class ErrorMapUNIQORNNoCL_ extends _BaseSQUIRRELDialogNoCL_ {
     public boolean loadSettings() {
         titleRefImage = gd.getNextChoice();
         titleSRImage = gd.getNextChoice();
-        maxMag = (int) gd.getNextNumber();
 
         showAdvancedSettings = gd.getNextBoolean();
         if (!_showAdvancedSettings && showAdvancedSettings && _errorMap_ExtraSettings == null) {
