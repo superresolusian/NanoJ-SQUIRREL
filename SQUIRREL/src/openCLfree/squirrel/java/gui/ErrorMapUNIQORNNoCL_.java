@@ -1,4 +1,4 @@
-package openCLfree.squirrel.java.gui.gui;
+package openCLfree.squirrel.java.gui;
 
 import ij.IJ;
 import ij.ImagePlus;
@@ -10,6 +10,10 @@ import ij.plugin.LutLoader;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import ij.process.LUT;
+import openCLfree.squirrel.java.tools.SQUIRRELMathTools_;
+import openCLfree.squirrel.java.tools.SQUIRREL_CCMPeak;
+import openCLfree.squirrel.java.tools.SQUIRREL_CrossCorrelationMap;
+import openCLfree.squirrel.java.tools.SQUIRREL_GetFileFromResource;
 import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.optim.MaxEval;
 import org.apache.commons.math3.optim.nonlinear.scalar.GoalType;
@@ -22,13 +26,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 import static java.lang.Math.*;
-import static java.lang.Math.ceil;
-import static openCLfree.squirrel.java.gui.tools.SQUIRRELMathTools_.calculateMSE;
-import static openCLfree.squirrel.java.gui.tools.SQUIRRELMathTools_.calculatePPMCC;
-import static openCLfree.squirrel.java.gui.tools.SQUIRREL_CrossCorrelationMap.calculateCrossCorrelationMap;
-import static openCLfree.squirrel.java.gui.tools.SQUIRREL_CrossCorrelationMap.cropCCM;
-import static openCLfree.squirrel.java.gui.tools.SQUIRREL_CCMPeak.getShiftFromCrossCorrelationPeak;
-import static openCLfree.squirrel.java.gui.tools.SQUIRREL_GetFileFromResource.getLocalFileFromResource;
 
 
 /**
@@ -53,7 +50,6 @@ public class ErrorMapUNIQORNNoCL_ extends _BaseSQUIRRELDialogNoCL_ {
     boolean smartBoundary, framePurge, borderControl;
     boolean doRegistration;
     int maxExpectedMisalignment;
-    int maxSRStackSize;
     boolean showIntensityNormalised, showConvolved, showPositiveNegative;
 
     ImagePlus impRef, impSR;
@@ -64,7 +60,7 @@ public class ErrorMapUNIQORNNoCL_ extends _BaseSQUIRRELDialogNoCL_ {
     boolean noCrop = true;
     private boolean borderCrop = false;
     private boolean registrationCrop = false;
-    private int maxMag;
+
 
     DecimalFormat df = new DecimalFormat("00.00");
 
@@ -80,17 +76,6 @@ public class ErrorMapUNIQORNNoCL_ extends _BaseSQUIRRELDialogNoCL_ {
         }
 
         imageTitles = WindowManager.getImageTitles();
-        for(int n=0; n<nImages; n++){
-            ImagePlus thisImp = WindowManager.getImage(imageTitles[n]);
-            if(thisImp.getStackSize()<=maxSRStackSize){
-                titles.add(thisImp.getTitle());
-            }
-        }
-
-        imageTitles = new String[titles.size()];
-        for(int n=0; n<titles.size(); n++){
-            imageTitles[n] = titles.get(n);
-        }
 
         return true;
     }
@@ -394,8 +379,8 @@ public class ErrorMapUNIQORNNoCL_ extends _BaseSQUIRRELDialogNoCL_ {
             /// metrics
             FloatProcessor fpIntensityScaledBlurred_RefSize = (FloatProcessor) fpSRIntensityScaledBlurred.resize(w_Ref, h_Ref);
             float[] pixelsIntensityScaledBlurred_RefSize = (float[]) fpIntensityScaledBlurred_RefSize.getPixels();
-            double globalRMSE = sqrt(calculateMSE(pixelsIntensityScaledBlurred_RefSize, pixelsRef));
-            double globalPPMCC = calculatePPMCC(pixelsIntensityScaledBlurred_RefSize, pixelsRef, true);
+            double globalRMSE = sqrt(SQUIRRELMathTools_.calculateMSE(pixelsIntensityScaledBlurred_RefSize, pixelsRef));
+            double globalPPMCC = SQUIRRELMathTools_.calculatePPMCC(pixelsIntensityScaledBlurred_RefSize, pixelsRef, true);
 
             /// error map
             float[] pixelsEMap = new float[nPixelsSR];
@@ -578,13 +563,13 @@ public class ErrorMapUNIQORNNoCL_ extends _BaseSQUIRRELDialogNoCL_ {
             FloatProcessor fpSR = imsSR.getProcessor(n).convertToFloatProcessor();
 
             IJ.showStatus("calculating cross-correlation...");
-            FloatProcessor ipCCM = (FloatProcessor) calculateCrossCorrelationMap(fpRef, fpSR, true);
+            FloatProcessor ipCCM = (FloatProcessor) SQUIRREL_CrossCorrelationMap.calculateCrossCorrelationMap(fpRef, fpSR, true);
 
-            if (maxExpectedMisalignment != 0) ipCCM = cropCCM(ipCCM, maxExpectedMisalignment);
+            if (maxExpectedMisalignment != 0) ipCCM = SQUIRREL_CrossCorrelationMap.cropCCM(ipCCM, maxExpectedMisalignment);
 
             IJ.showStatus("calculating cross-correlation peaks...");
 
-            float[] shift = getShiftFromCrossCorrelationPeak(ipCCM, 2);
+            float[] shift = SQUIRREL_CCMPeak.getShiftFromCrossCorrelationPeak(ipCCM, 2);
             float shiftX = shift[1];
             float shiftY = shift[2];
             rt.incrementCounter();
@@ -776,7 +761,7 @@ public class ErrorMapUNIQORNNoCL_ extends _BaseSQUIRRELDialogNoCL_ {
     public static void applyLUT(ImagePlus imp, String path) {
         File temp = null;
         try {
-            temp = getLocalFileFromResource("/"+path);
+            temp = SQUIRREL_GetFileFromResource.getLocalFileFromResource("/"+path);
         } catch (IOException e) {
             IJ.log("Couldn't find resource: "+path);
         }

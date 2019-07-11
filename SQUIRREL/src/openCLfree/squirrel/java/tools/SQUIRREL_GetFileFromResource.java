@@ -1,4 +1,4 @@
-package openCLfree.squirrel.java.gui.tools;
+package openCLfree.squirrel.java.tools;
 
 import java.io.*;
 import java.util.Random;

@@ -209,7 +209,6 @@ public class ErrorMapUNIQORN_ extends _BaseSQUIRRELDialog_ {
                 log.status("Checking stack, frame " + n);
                 log.progress(n, nSlicesSR);
 
-                ImageProcessor ip = imsSR.getProcessor(n);
                 FloatProcessor fp = imsSR.getProcessor(n).convertToFloatProcessor();
                 float[] pixels = (float[]) fp.getPixels();
 

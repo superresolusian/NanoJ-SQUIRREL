@@ -1,4 +1,4 @@
-package openCLfree.squirrel.java.gui.gui;
+package openCLfree.squirrel.java.gui;
 
 import ij.IJ;
 import ij.ImagePlus;

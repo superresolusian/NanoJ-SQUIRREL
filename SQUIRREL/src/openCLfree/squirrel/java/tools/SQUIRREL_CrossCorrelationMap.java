@@ -1,4 +1,4 @@
-package openCLfree.squirrel.java.gui.tools;
+package openCLfree.squirrel.java.tools;
 
 import ij.IJ;
 import ij.process.FloatProcessor;

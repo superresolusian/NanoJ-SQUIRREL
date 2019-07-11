@@ -1,4 +1,4 @@
-package openCLfree.squirrel.java.gui.tools;
+package openCLfree.squirrel.java.tools;
 
 import static java.lang.Math.pow;
 import static java.lang.Math.sqrt;
