@@ -10,7 +10,7 @@ If you're not interested in viewing the code, and just want to use the SQUIRREL 
 * Press 'Apply changes' in the ImageJ Updater window, and then restart Fiji
 * You should now have the menu options for 'NanoJ-Core' and 'NanoJ-SQUIRREL' in your Plugins menu ready to go :)
 
-For further instructions I strongly advise reading the manual, which is downloadable in the list of files above.
+For further instructions I strongly advise reading the manual, which is downloadable in the list of files above (NanoJ-SQUIRREL - Manual.pdf).
 
 ## Test data
 If you want to give SQUIRREL a test run on a small data set, you can find the raw data from Figure 3 of the paper in the 'test_data' folder above. This is a small crop from a widefield reference image and three super-resolution reconstructions of that same crop reconstructed via different algorithms.
